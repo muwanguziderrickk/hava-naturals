@@ -1,0 +1,711 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Super Admin</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons/font/bootstrap-icons.css" rel="stylesheet">
+  <!-- Font Awesome for icons -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+  <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+  <script type="module" src="../js/Toasts/successfulLogin.js"></script>
+  <link rel="stylesheet" href="css/sideBarNavigation.css">
+</head>
+
+<body>
+  <!-- HTML: Loading screen -->
+  <div id="loader"
+    style="position:fixed; top:0; left:0; width:100%; height:100%; background:white; z-index:9999; display:flex; align-items:center; justify-content:center;">
+    <div class="spinner-border text-primary" role="status"></div>
+  </div>
+  <!-- Your actual app content -->
+  <div id="main-content" style="display:none;">
+    <div class="container-fluid">
+      <div class="row">
+        <!-- Sidebar -->
+        <div class="col-lg-2 sidebar border-end vh-100 position-fixed">
+          <img src="/img/logoShareDisplay.jpeg" alt="E-Learner Logo" class="sidebar-logo py-3 px-3 text-center">
+          <h5 class="border-bottom"></h5>
+
+          <a href="#" onclick="showSection('dashboard')" class="active-link"><i class="bi bi-speedometer2"></i>
+            Dashboard</a>
+          <a href="#" onclick="showSection('products')"><i class="bi bi-capsule"></i> Manage Products</a>
+          <a href="#" onclick="showSection('stock')"><i class="bi bi-box"></i> Stock Management</a>
+          <a href="#" onclick="showSection('allocation')"><i class="bi bi-truck"></i> Stock Allocation</a>
+          <a href="#" onclick="showSection('branches')"><i class="bi bi-geo-alt"></i> Branches</a>
+          <a href="#" onclick="showSection('workers')"><i class="bi bi-people"></i> Workers</a>
+          <a href="#" onclick="showSection('reports')"><i class="bi bi-bar-chart"></i> Reports</a>
+        </div>
+        <!-- Sidebar toggle (shows on < 992 px only) -->
+        <button id="sidebarToggle" class="sidebar-toggle d-lg-none" aria-label="Toggle navigation">
+          <i class="bi bi-list"></i>
+        </button>
+        <!-- Dim‑screen backdrop -->
+        <div id="sidebarBackdrop" class="sidebar-backdrop"></div>
+
+
+
+        <!-- Main Content -->
+        <div class="ms-sm-auto col-lg-10 dashboard-content">
+          <nav class="navbar navbar-expand-lg navbar-light bg-light shadow-sm sticky-top px-3 py-2">
+            <a class="navbar-brand fw-bold text-truncate w-100" href="#" style="max-width: 100%;">
+              <h4 style="color: darkblue;">Top Level Management (<span id="branchNamePlaceholder"></span>)</h4>
+            </a>
+
+            <div class="ms-auto d-flex align-items-center gap-3">
+              <!-- Notification Bell -->
+              <div class="position-relative" data-bs-toggle="tooltip" title="Notifications">
+                <i class="bi bi-bell fs-4"></i>
+                <span class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger">
+                  3
+                  <span class="visually-hidden">unread messages</span>
+                </span>
+              </div>
+
+              <!-- User Info Dropdown -->
+              <div class="dropdown">
+                <a class="d-flex align-items-center text-decoration-none dropdown-toggle" href="#" role="button"
+                  id="userDropdown" data-bs-toggle="dropdown" aria-expanded="false">
+                  <img src="/img/author2.jpg" id="userPhoto" alt="User Photo" class="rounded-circle me-2" width="36"
+                    height="36" />
+                  <div class="d-none d-md-block text-start">
+                    <div class="fw-semibold" id="userName">Loading...</div>
+                    <small class="text-muted" id="userEmail">loading@email.com</small>
+                  </div>
+                </a>
+                <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="userDropdown">
+                  <li><a class="dropdown-item" href="#">View Profile</a></li>
+                  <li><a class="dropdown-item" href="#">Settings</a></li>
+                  <li>
+                    <hr class="dropdown-divider" />
+                  </li>
+                  <li><a class="dropdown-item text-danger" href="#" id="signOutBtn">Logout</a></li>
+                </ul>
+                <!-- Sign-out Progress Modal -->
+                <div class="modal fade" id="signOutModal" tabindex="-1" aria-hidden="true">
+                  <div class="modal-dialog modal-dialog-centered">
+                    <div class="modal-content bg-white rounded shadow text-center p-4 border-0">
+                      <div class="modal-body">
+                        <div class="spinner-border text-danger mb-3" role="status"></div>
+                        <p class="fw-semibold text-dark mb-0">Signing out...</p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </nav>
+
+
+          <!-- Dashboard Overview (Top‑Level Manager) -->
+          <div id="dashboard" class="content-section active-section">
+            <!-- 1st row – live counters -->
+            <div class="row mt-3">
+              <div class="col-md-4">
+                <div class="card shadow-sm h-100 text-center py-3">
+                  <h5>Company Products</h5>
+                  <p id="totalProducts" class="display-6 mb-0">–</p>
+                </div>
+              </div>
+
+              <div class="col-md-4">
+                <div class="card shadow-sm h-100 text-center py-3" id="companyStockCard">
+                  <h5>Current Company Stock</h5>
+                  <button id="companyStockMore" class="stretched-link btn btn-link p- text-decoration-none">
+                    <p id="companyStock" class="display-6 mb-0">–</p>
+                  </button>
+                </div>
+                <div class="modal fade" id="companyStockModal" tabindex="-1">
+                  <div class="modal-dialog modal-sm">
+                    <div class="modal-content">
+                      <div class="modal-header">
+                        <h5 class="modal-title">Company Stock by Product</h5>
+                        <button class="btn-close" data-bs-dismiss="modal"></button>
+                      </div>
+                      <div class="modal-body">
+                        <table class="table">
+                          <tbody id="companyStockBody"></tbody>
+                        </table>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="col-md-4">
+                <div class="card shadow-sm h-100 text-center py-3">
+                  <h5>Company Branches</h5>
+                  <p id="totalBranches" class="display-6 mb-0">–</p>
+                </div>
+              </div>
+            </div>
+
+            <!-- 2nd row – month‑to‑date, with modals -->
+            <div class="row g-4 mt-4 text-center">
+              <div class="col-md-4">
+                <div class="card p-4">
+                  <h6><i class="fas fa-boxes text-primary mb-2 fa-2x"></i></h6>
+                  <h5>Current Branch Stock</h5>
+                  <p id="branchStockTotal" class="fw-bold fs-4 mb-1">–</p>
+                  <p class="small text-muted mb-3">Combined for all branches</p>
+                  <button id="branchStockMore" class="btn btn-sm btn-outline-primary">
+                    View More Details
+                  </button>
+                </div>
+                <div class="modal fade" id="branchStockModal" tabindex="-1">
+                  <div class="modal-dialog modal-lg">
+                    <div class="modal-content">
+                      <div class="modal-header">
+                        <h5 class="modal-title">Branch Stock Breakdown</h5>
+                        <button class="btn-close" data-bs-dismiss="modal"></button>
+                      </div>
+                      <div class="modal-body" id="branchStockBody"></div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="col-md-4">
+                <div class="card p-4">
+                  <h6><i class="fas fa-chart-line text-success mb-2 fa-2x"></i></h6>
+                  <h5>Total Sales (This Month)</h5>
+                  <p id="monthSalesTotal" class="fw-bold fs-4 mb-1">–</p>
+                  <p class="small text-muted mb-3">Cash + Credit</p>
+                  <button id="salesMore" class="btn btn-sm btn-outline-success">
+                    View More Details
+                  </button>
+                </div>
+                <div class="modal fade" id="salesModal" tabindex="-1">
+                  <div class="modal-dialog modal-lg">
+                    <div class="modal-content">
+                      <div class="modal-header">
+                        <h5 class="modal-title">Sales – Current Month</h5>
+                        <button class="btn-close" data-bs-dismiss="modal"></button>
+                      </div>
+                      <div class="modal-body table-responsive">
+                        <table class="table">
+                          <thead>
+                            <tr>
+                              <th>Branch</th>
+                              <th>Cash (UGX)</th>
+                              <th>Credit (UGX)</th>
+                              <th>Total (UGX)</th>
+                            </tr>
+                          </thead>
+                          <tbody id="salesBody"></tbody>
+                        </table>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="col-md-4">
+                <div class="card p-4">
+                  <h6><i class="fas fa-money-bill-wave text-warning mb-2 fa-2x"></i></h6>
+                  <h5>Total Expenses (This Month)</h5>
+                  <p id="monthExpensesTotal" class="fw-bold fs-4 mb-1">–</p>
+                  <p class="small text-muted mb-3">All branches</p>
+                  <button id="expensesMore" class="btn btn-sm btn-outline-warning">
+                    View More Details
+                  </button>
+                </div>
+              </div>
+              <div class="modal fade" id="expensesModal" tabindex="-1">
+                <div class="modal-dialog">
+                  <div class="modal-content">
+                    <div class="modal-header">
+                      <h5 class="modal-title">Expenses – Current Month</h5>
+                      <button class="btn-close" data-bs-dismiss="modal"></button>
+                    </div>
+                    <div class="modal-body table-responsive">
+                      <table class="table">
+                        <thead>
+                          <tr>
+                            <th>Branch</th>
+                            <th>Total UGX</th>
+                          </tr>
+                        </thead>
+                        <tbody id="expensesBody"></tbody>
+                      </table>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Recent activities (auto‑updated) -->
+            <div class="mt-5">
+              <h4 class="section-title mb-3">Recent Activities</h4>
+              <div id="activityFeed" class="list-group"></div>
+            </div>
+          </div>
+
+
+
+          <!-- Products -->
+          <div id="products" class="content-section">
+            <div class="d-flex justify-content-between align-items-center mb-3">
+              <h5>Company Product List</h5>
+              <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addProductModal"
+                onclick="resetProductForm()"><i class="fas fa-plus-circle"></i> Add Product</button>
+            </div>
+            <div class="table-responsive">
+              <table class="table table-bordered text-center">
+                <thead class="table-light">
+                  <tr>
+                    <th>Image</th>
+                    <th>Item Code</th>
+                    <th>Item Particulars</th>
+                    <th>Selling Price</th>
+                    <th>Description</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody id="productTableBody">
+                  <!-- Populated by JavaScript -->
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- Add/Edit Product Modal -->
+          <div class="modal fade" id="addProductModal" tabindex="-1" aria-labelledby="addProductModalLabel"
+            aria-hidden="true">
+            <div class="modal-dialog">
+              <div class="modal-content">
+                <div class="modal-header">
+                  <h5 class="modal-title" id="addProductModalLabel">Add/Edit Product</h5>
+                  <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"
+                    onclick="resetProductForm()"></button>
+                </div>
+                <div class="modal-body">
+                  <form id="productForm">
+                    <input type="hidden" id="editProductId">
+                    <div class="mb-3">
+                      <label class="form-label">Item Particulars</label>
+                      <input type="text" class="form-control" id="itemParticulars" required>
+                    </div>
+                    <div class="mb-3">
+                      <label class="form-label">Selling Price</label>
+                      <input type="number" class="form-control" id="sellingPrice" required>
+                    </div>
+                    <div class="mb-3">
+                      <label class="form-label">Description</label>
+                      <textarea class="form-control" id="description" rows="3" required></textarea>
+                    </div>
+                    <div class="mb-3">
+                      <label class="form-label">Product Image</label>
+                      <input type="file" class="form-control" id="productImage" accept=".jpg, .jpeg, .png">
+                    </div>
+                  </form>
+                </div>
+                <div class="modal-footer">
+                  <button type="button" class="btn btn-secondary" data-bs-dismiss="modal"
+                    onclick="resetProductForm()">Cancel</button>
+                  <button type="button" class="btn btn-success" id="saveProductBtn" onclick="submitProduct()">
+                    <span id="saveProductSpinner" class="spinner-border spinner-border-sm d-none"></span>
+                    <span id="saveProductText">Save Product</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Start Read More Modal -->
+          <div class="modal fade" id="productDetailsModal" tabindex="-1" aria-labelledby="productDetailsModalLabel"
+            aria-hidden="true">
+            <div class="modal-dialog modal-lg modal-dialog-centered">
+              <div class="modal-content">
+                <div class="modal-header">
+                  <h5 class="modal-title" id="productDetailsModalLabel">Product Details</h5>
+                  <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body text-center">
+                  <img id="modalProductImage" src="" alt="Product Image" class="img-fluid mb-3"
+                    style="max-height: 200px;">
+                  <h5 id="modalItemParticulars"></h5>
+                  <p id="modalFullDescription" class="mt-3"></p>
+                </div>
+              </div>
+            </div>
+          </div>
+          <!-- End Read More Modal -->
+          <!-- Products -->
+
+
+          <!-- 📦 Stock Management Section -->
+          <div id="stock" class="content-section">
+            <h5>Company Stock Entry</h5>
+            <div class="card p-3 mb-4">
+              <h5>Record New Stock</h5>
+              <form id="stockForm" class="row g-3">
+                <div class="col-md-4">
+                  <label class="form-label">Product</label>
+                  <select class="form-select" id="stockProductSelect" required></select>
+                </div>
+                <div class="col-md-4">
+                  <label class="form-label">Quantity</label>
+                  <input type="number" class="form-control" id="stockQuantity" required>
+                </div>
+                <div class="col-md-4">
+                  <label class="form-label">Expiry Date</label>
+                  <input type="date" class="form-control" id="expiryDate" required>
+                </div>
+                <div class="col-12">
+                  <button type="submit" id="addStockBtn" class="btn btn-success">
+                    <span class="spinner-border spinner-border-sm d-none" id="stockSpinner" role="status"
+                      aria-hidden="true"></span>
+                    <span id="stockBtnText">Add Stock</span>
+                  </button>
+                </div>
+              </form>
+            </div>
+
+            <div class="card p-3 mb-4">
+              <h5>Company Stock Overview</h5>
+              <div class="table-responsive">
+                <table class="table table-bordered table-sm">
+                  <thead>
+                    <tr>
+                      <th>Item Code</th>
+                      <th>Item Particulars</th>
+                      <th>Batch Code</th>
+                      <th>Added Qty</th>
+                      <th>Remaining Qty</th>
+                      <th>Expiry Date</th>
+                      <th>Action</th>
+                    </tr>
+                  </thead>
+                  <tbody id="generalStockTableBody"></tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+          <!-- End Stock Management Section -->
+
+
+          <!-- Start Stock Allocation -->
+          <div id="allocation" class="content-section">
+            <h5>Stock Allocation</h5>
+            <div class="card p-3 mb-4">
+              <h5>Allocate Stock to Branch</h5>
+              <form id="allocationForm" class="row g-3">
+                <div class="col-md-4">
+                  <label class="form-label">Product</label>
+                  <select class="form-select" id="allocateProductSelect" required></select>
+                </div>
+                <div class="col-md-3">
+                  <label class="form-label">Batch</label>
+                  <select class="form-select" id="batchSelect" required></select>
+                </div>
+                <div class="col-md-3">
+                  <label class="form-label">Branch</label>
+                  <select class="form-select" id="branchSelect" required></select>
+                </div>
+                <div class="col-md-2">
+                  <label class="form-label">Quantity</label>
+                  <input type="number" class="form-control" id="allocateQuantity" required min="1">
+                </div>
+                <div class="col-12">
+                  <button type="submit" id="allocateStockBtn" class="btn btn-primary">
+                    <span class="spinner-border spinner-border-sm d-none" id="allocateSpinner" role="status"
+                      aria-hidden="true"></span>
+                    <span id="allocateBtnText">Allocate Stock</span>
+                  </button>
+                </div>
+              </form>
+            </div>
+
+            <div class="card p-3">
+              <h5>Branch Stock Overview</h5>
+              <table class="table table-bordered table-sm">
+                <thead>
+                  <tr>
+                    <th>Item Code</th>
+                    <th>Item Particulars</th>
+                    <th>Branch</th>
+                    <th>Batch Code</th>
+                    <th>Allocated Qty</th>
+                    <th>Action</th>
+                  </tr>
+                </thead>
+                <tbody id="branchStockTableBody"></tbody>
+              </table>
+            </div>
+          </div>
+          <!-- End Stock Allocation -->
+
+          <!-- Branches -->
+          <div id="branches" class="content-section">
+            <div class="d-flex justify-content-between align-items-center mb-3">
+              <h5>Company Branches</h5>
+              <button id="addBranchBtn" class="btn btn-primary"><i class="fas fa-plus-circle"></i> Add Branch</button>
+            </div>
+
+            <div id="branchList" class="row g-3"></div>
+
+            <!-- Modal -->
+            <div class="modal fade" id="branchModal" tabindex="-1" aria-labelledby="branchModalLabel"
+              aria-hidden="true">
+              <div class="modal-dialog modal-lg">
+                <div class="modal-content">
+                  <form id="branchForm">
+                    <div class="modal-header">
+                      <h5 class="modal-title" id="branchModalLabel">Branch Details</h5>
+                      <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                    </div>
+                    <div class="modal-body row g-3">
+                      <div class="col-md-6">
+                        <input type="text" class="form-control" id="branchName" placeholder="Branch Name" required />
+                      </div>
+                      <div class="col-md-6">
+                        <input type="text" class="form-control" id="branchLocation" placeholder="Location" required />
+                      </div>
+                      <div class="col-md-6">
+                        <input type="tel" class="form-control" id="branchContact" placeholder="Contact Number" />
+                      </div>
+                      <div class="col-md-6">
+                        <input type="email" class="form-control" id="branchEmail" placeholder="Email" />
+                      </div>
+                      <div class="col-md-6">
+                        <input type="text" class="form-control" id="managerName" placeholder="Manager Name" />
+                      </div>
+                      <div class="col-md-6">
+                        <input type="email" class="form-control" id="managerEmail" placeholder="Manager Email" />
+                      </div>
+                      <div class="col-md-6">
+                        <select id="branchStatus" class="form-select">
+                          <option value="">Select Status</option>
+                          <option value="Active">Active</option>
+                          <option value="Inactive">Inactive</option>
+                        </select>
+                      </div>
+                      <div class="col-md-6">
+                        <label class="form-label">Services Offered</label><br />
+                        <div class="form-check form-check-inline">
+                          <input class="form-check-input" type="checkbox" value="Supplements" id="supplements" />
+                          <label class="form-check-label" for="supplements">Supplements</label>
+                        </div>
+                        <div class="form-check form-check-inline">
+                          <input class="form-check-input" type="checkbox" value="Consultation" id="consultation" />
+                          <label class="form-check-label" for="consultation">Consultation</label>
+                        </div>
+                        <div class="form-check form-check-inline">
+                          <input class="form-check-input" type="checkbox" value="Detoxification" id="detoxification" />
+                          <label class="form-check-label" for="detoxification">Detoxification</label>
+                        </div>
+                        <div class="form-check form-check-inline">
+                          <input class="form-check-input" type="checkbox" value="Nutritional Guidance"
+                            id="nutritionalGuidance" />
+                          <label class="form-check-label" for="nutritionalGuidance">Nutritional Guidance</label>
+                        </div>
+                      </div>
+                      <div class="col-md-6">
+                        <label for="openingTime" class="form-label">Opening Time</label>
+                        <input type="time" class="form-control" id="openingTime" />
+                      </div>
+                      <div class="col-md-6">
+                        <label for="closingTime" class="form-label">Closing Time</label>
+                        <input type="time" class="form-control" id="closingTime" />
+                      </div>
+                      <div class="col-md-6">
+                        <label for="branchPhoto" class="form-label">Upload Branch Photo</label>
+                        <input type="file" class="form-control" id="branchPhoto" accept="image/*" />
+                      </div>
+                    </div>
+                    <div class="modal-footer">
+                      <button type="submit" id="saveBranchBtn" class="btn btn-primary">
+                        <span id="saveSpinner" class="spinner-border spinner-border-sm d-none" role="status"
+                          aria-hidden="true"></span>
+                        <span id="saveBtnText">Save Branch</span>
+                      </button>
+                      <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    </div>
+                  </form>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Workers -->
+          <div id="workers" class="content-section">
+            <div class="d-flex justify-content-between align-items-center mb-3">
+              <h5>Employee Management</h5>
+              <button id="addWorkerBtn" class="btn btn-primary"><i class="fas fa-plus-circle"></i> Add Worker</button>
+            </div>
+            <div class="table-responsive">
+              <table class="table">
+                <thead>
+                  <tr>
+                    <th>Photo</th>
+                    <th>Full Name</th>
+                    <th>Position</th>
+                    <th>Branch</th>
+                    <th>Qualification</th>
+                    <th>Status</th>
+                    <th>Last Login</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody id="workerList"></tbody>
+              </table>
+            </div>
+
+            <!-- Worker Modal -->
+            <div class="modal fade" id="workerModal" tabindex="-1" role="dialog">
+              <div class="modal-dialog modal-lg">
+                <div class="modal-content">
+                  <form id="workerForm">
+                    <div class="modal-header">
+                      <h5 class="modal-title">Add/Edit Employee Details</h5>
+                      <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                    </div>
+                    <div class="modal-body row">
+                      <input type="hidden" id="workerId">
+
+                      <div class="form-group col-md-6">
+                        <label>Name *</label>
+                        <input type="text" class="form-control" id="fullName" placeholder="muwanguzi derrick" required>
+                      </div>
+
+                      <div class="form-group col-md-6">
+                        <label>Email *</label>
+                        <input type="email" class="form-control" id="email" autocomplete="email"
+                          placeholder="example@gmail.com" required>
+                      </div>
+
+                      <div class="form-group col-md-6">
+                        <label for="password">Password * (for account creation)</label>
+                        <input type="password" class="form-control" autocomplete="new-password" id="password" required>
+                      </div>
+
+                      <div class="form-group col-md-6">
+                        <label for="contact">Phone</label>
+                        <input type="text" class="form-control" id="contact">
+                      </div>
+
+                      <div class="form-group col-md-6">
+                        <label for="accessLevel">Access Level *</label>
+                        <select class="form-control" id="accessLevel" required>
+                          <option value="">Select Role</option>
+                          <option>Top Level Manager</option>
+                          <option>Branch Manager</option>
+                          <option>Nutritionist</option>
+                          <option>Front Desk</option>
+                        </select>
+                      </div>
+
+                      <div class="form-group col-md-6">
+                        <label for="branchAssign">Branch *</label>
+                        <select class="form-control" id="branchAssign" required>
+                          <option value="">Select Branch</option>
+                        </select>
+                      </div>
+
+                      <div class="form-group col-md-6">
+                        <label for="position">Position/Department *</label>
+                        <input type="text" class="form-control" id="position" required>
+                      </div>
+
+                      <div class="form-group col-md-6">
+                        <label for="schedule">Work Schedule</label>
+                        <input type="text" class="form-control" id="schedule">
+                      </div>
+
+                      <div class="form-group col-md-6">
+                        <label for="workerQualifications">Qualification Documents</label>
+                        <input type="file" class="form-control" id="workerQualifications" accept=".pdf">
+                      </div>
+
+                      <div class="form-group col-md-6">
+                        <label for="workerPhoto">Profile Photo</label>
+                        <input type="file" class="form-control" id="workerPhoto" accept=".jpg, .jpeg, .png">
+                      </div>
+                    </div>
+
+                    <div class="modal-footer">
+                      <button type="submit" class="btn btn-success" id="saveWorkerBtn">Save Worker</button>
+                    </div>
+                  </form>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Performance Reports -->
+          <div id="reports" class="content-section px-2">
+            <!-- Global Filters -->
+            <div class="d-flex flex-wrap gap-3 align-items-end mb-4">
+              <div>
+                <label class="form-label mb-1">From</label>
+                <input type="date" id="reportStart" class="form-control form-control-sm">
+              </div>
+
+              <div>
+                <label class="form-label mb-1">To</label>
+                <input type="date" id="reportEnd" class="form-control form-control-sm">
+              </div>
+
+              <button id="refreshDashboard" class="btn btn-primary btn-sm">
+                <i class="bi bi-arrow-repeat me-1"></i>Refresh
+              </button>
+              <button id="exportPDF" class="btn btn-outline-primary btn-sm">
+                <i class="bi bi-download me-1"></i>PDF Export
+              </button>
+            </div>
+
+            <!-- Charts Grid -->
+            <div class="row g-4">
+              <div class="col-lg-6">
+                <h6 class="text-center mb-2">Cash vs Credit Sales (by Branch)</h6>
+                <canvas id="salesByBranchChart" height="160"></canvas>
+              </div>
+
+              <div class="col-lg-6">
+                <h6 class="text-center mb-2">Current Stock Value (by Branch)</h6>
+                <canvas id="stockValueChart" height="160"></canvas>
+              </div>
+
+              <div class="col-lg-6">
+                <h6 class="text-center mb-2">Net Cash (Cash Sales – Expenses)</h6>
+                <canvas id="netCashChart" height="160"></canvas>
+              </div>
+
+              <div class="col-lg-6">
+                <h6 class="text-center mb-2">Top Selling Products</h6>
+                <canvas id="topProductsChart" height="160"></canvas>
+              </div>
+
+              <div class="col-lg-6">
+                <h6 class="text-center mb-2">Expenses Breakdown</h6>
+                <canvas id="expenseBreakdownChart" height="160"></canvas>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+  </div>
+
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+  <script type="module" src="../js/sessionManager.js"></script>
+  <script type="module" src="js/dashboard-overview.js"></script>
+  <script type="module" src="js/company-branches.js"></script>
+  <script type="module" src="js/worker-management.js"></script>
+  <script type="module" src="js/company-products.js"></script>
+  <script type="module" src="js/stock-management.js"></script>
+  <script type="module" src="js/stock-allocation.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
+  <script type="module" src="js/performance-reports.js"></script>
+
+  <script src="/staff-portal/js/sideBarNavigation.js"></script>
+</body>
+
+</html>

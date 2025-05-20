@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Pharmacist/Nutritionist Dashboard</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons/font/bootstrap-icons.css" rel="stylesheet">
+  <script type="module" src="../js/Toasts/successfulLogin.js"></script>
+  <style>
+    body {
+      background-color: #eef1f4;
+    }
+
+    .sidebar {
+      height: 100vh;
+      background-color: #198754;
+      color: white;
+    }
+
+    .sidebar a {
+      color: white;
+      padding: 12px 20px;
+      display: block;
+      text-decoration: none;
+    }
+
+    .sidebar a:hover {
+      background-color: #157347;
+    }
+
+    .content-section {
+      display: none;
+    }
+
+    .active-section {
+      display: block;
+    }
+  </style>
+</head>
+
+<body>
+  <!-- HTML: Loading screen -->
+  <div id="loader"
+    style="position:fixed; top:0; left:0; width:100%; height:100%; background:white; z-index:9999; display:flex; align-items:center; justify-content:center;">
+    <div class="spinner-border text-primary" role="status"></div>
+  </div>
+  <!-- Your actual app content -->
+  <div id="main-content" style="display:none;">
+    <div class="container-fluid">
+      <div class="row">
+        <!-- Sidebar -->
+        <div class="col-md-2 sidebar d-flex flex-column">
+          <h4 class="py-4 px-3 text-center border-bottom">Pharmacist</h4>
+          <a href="#" onclick="showSection('appointments')"><i class="bi bi-calendar-check"></i> Appointments</a>
+          <a href="#" onclick="showSection('patients')"><i class="bi bi-person"></i> Patients</a>
+          <a href="#" onclick="showSection('recommendations')"><i class="bi bi-file-earmark-medical"></i>
+            Recommendations</a>
+          <a href="#" onclick="showSection('stock-check')"><i class="bi bi-box"></i> Check Stock</a>
+        </div>
+
+        <!-- Main Content -->
+        <div class="col-md-10 ms-sm-auto col-lg-10 dashboard-content">
+          <nav class="navbar navbar-expand-lg navbar-light bg-light shadow-sm sticky-top px-3 py-2">
+            <a class="navbar-brand fw-bold" href="#">Hava Naturals</a>
+
+            <div class="ms-auto d-flex align-items-center gap-3">
+              <!-- Notification Bell -->
+              <div class="position-relative" data-bs-toggle="tooltip" title="Notifications">
+                <i class="bi bi-bell fs-4"></i>
+                <span class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger">
+                  3
+                  <span class="visually-hidden">unread messages</span>
+                </span>
+              </div>
+
+              <!-- User Info Dropdown -->
+              <div class="dropdown">
+                <a class="d-flex align-items-center text-decoration-none dropdown-toggle" href="#" role="button"
+                  id="userDropdown" data-bs-toggle="dropdown" aria-expanded="false">
+                  <img src="/img/author2.jpg" id="userPhoto" alt="User Photo" class="rounded-circle me-2" width="36"
+                    height="36" />
+                  <div class="d-none d-md-block text-start">
+                    <div class="fw-semibold" id="userName">Loading...</div>
+                    <small class="text-muted" id="userEmail">loading@email.com</small>
+                  </div>
+                </a>
+                <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="userDropdown">
+                  <li><a class="dropdown-item" href="#">View Profile</a></li>
+                  <li><a class="dropdown-item" href="#">Settings</a></li>
+                  <li>
+                    <hr class="dropdown-divider" />
+                  </li>
+                  <li><a class="dropdown-item text-danger" href="#" id="signOutBtn">Logout</a></li>
+                </ul>
+                <!-- Sign-out Progress Modal -->
+                <div class="modal fade" id="signOutModal" tabindex="-1" aria-hidden="true">
+                  <div class="modal-dialog modal-dialog-centered">
+                    <div class="modal-content bg-white rounded shadow text-center p-4 border-0">
+                      <div class="modal-body">
+                        <div class="spinner-border text-danger mb-3" role="status"></div>
+                        <p class="fw-semibold text-dark mb-0">Signing out...</p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </nav>
+
+          <!-- Appointments -->
+          <div id="appointments" class="content-section active-section">
+            <h4>Today’s Appointments</h4>
+            <table class="table mt-3 table-bordered">
+              <thead>
+                <tr>
+                  <th>Time</th>
+                  <th>Patient Name</th>
+                  <th>Purpose</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>10:00 AM</td>
+                  <td>Alice K.</td>
+                  <td>Nutrition Consultation</td>
+                  <td><button class="btn btn-sm btn-info">View</button></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <!-- Patients -->
+          <div id="patients" class="content-section">
+            <h4>Patient List</h4>
+            <table class="table table-hover">
+              <thead>
+                <tr>
+                  <th>Name</th>
+                  <th>Age</th>
+                  <th>Phone</th>
+                  <th>Last Visit</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>Robert M.</td>
+                  <td>34</td>
+                  <td>0772 888999</td>
+                  <td>2025-05-12</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <!-- Recommendations -->
+          <div id="recommendations" class="content-section">
+            <h4>New Recommendation</h4>
+            <form class="row g-3">
+              <div class="col-md-6">
+                <label class="form-label">Patient</label>
+                <input type="text" class="form-control" placeholder="Enter patient name">
+              </div>
+              <div class="col-md-6">
+                <label class="form-label">Supplement</label>
+                <input type="text" class="form-control" placeholder="e.g. Omega-3">
+              </div>
+              <div class="col-md-12">
+                <label class="form-label">Dosage Instructions</label>
+                <textarea class="form-control" rows="3"></textarea>
+              </div>
+              <div class="col-12">
+                <button class="btn btn-success">Submit</button>
+              </div>
+            </form>
+          </div>
+
+          <!-- Stock Check -->
+          <div id="stock-check" class="content-section">
+            <h4>Check Available Stock</h4>
+            <table class="table table-striped mt-3">
+              <thead>
+                <tr>
+                  <th>Product</th>
+                  <th>Quantity</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>Magnesium</td>
+                  <td>230</td>
+                  <td><span class="badge bg-success">Available</span></td>
+                </tr>
+                <tr>
+                  <td>Zinc</td>
+                  <td>30</td>
+                  <td><span class="badge bg-warning text-dark">Low</span></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+  <script type="module" src="../js/sessionManager.js"></script>
+
+  <script>
+    function showSection(id) {
+      document.querySelectorAll('.content-section').forEach(sec => sec.classList.remove('active-section'));
+      document.getElementById(id).classList.add('active-section');
+    }
+  </script>
+</body>
+
+</html>

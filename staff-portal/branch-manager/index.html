@@ -1,0 +1,565 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Branch Manager</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons/font/bootstrap-icons.css" rel="stylesheet">
+  <!-- Font Awesome for icons -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+  <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+
+  <script type="module" src="../js/Toasts/successfulLogin.js"></script>
+  <link rel="stylesheet" href="css/sideBarNavigation.css">
+</head>
+
+<body>
+  <!-- HTML: Loading screen -->
+  <div id="loader"
+    style="position:fixed; top:0; left:0; width:100%; height:100%; background:white; z-index:9999; display:flex; align-items:center; justify-content:center;">
+    <div class="spinner-border text-primary" role="status"></div>
+  </div>
+  <!-- Your actual app content -->
+  <div id="main-content" style="display:none;">
+    <div class="container-fluid">
+      <div class="row">
+        <!-- Sidebar -->
+        <div class="col-lg-2 sidebar border-end vh-100 position-fixed">
+          <img src="/img/logoShareDisplay.jpeg" alt="E-Learner Logo" class="sidebar-logo py-3 px-3 text-center">
+          <h5 class="border-bottom"></h5>
+
+          <a href="#" onclick="showSection('dashboard')" class="active-link"><i class="bi bi-speedometer2"></i>
+            Dashboard</a>
+          <a href="#" onclick="showSection('sales-Management')"><i class="bi bi-cash-coin"></i> Sales & Expenses</a>
+          <a href="#" onclick="showSection('sales-movement-report')"><i class="bi bi-graph-up-arrow"></i> Sales
+            Report</a>
+          <a href="#" onclick="showSection('inventory')"><i class="bi bi-box"></i> Inventory</a>
+          <a href="#" onclick="showSection('Stock-movement-report')"><i class="bi bi-arrow-left-right"></i> Stock
+            Report</a>
+          <a href="#" onclick="showSection('analytics')"><i class="fa-solid fa-chart-pie"></i> Analytics</a>
+          <a href="#" onclick="showSection('staff')"><i class="bi bi-person-lines-fill"></i> Staff</a>
+        </div>
+        <!-- Sidebar toggle (shows on < 992 px only) -->
+        <button id="sidebarToggle" class="sidebar-toggle d-lg-none" aria-label="Toggle navigation">
+          <i class="bi bi-list"></i>
+        </button>
+        <!-- Dim‑screen backdrop -->
+        <div id="sidebarBackdrop" class="sidebar-backdrop"></div>
+
+
+
+        <!-- Main Content -->
+        <div class="ms-sm-auto col-lg-10 dashboard-content">
+          <nav class="navbar navbar-expand-lg navbar-light bg-light shadow-sm sticky-top px-3 py-2">
+            <a class="navbar-brand fw-bold text-truncate w-100" href="#" style="max-width: 100%;">
+              <h4><span id="branchNamePlaceholder" style="color: darkblue;"></span></h4>
+            </a>
+
+            <div class="ms-auto d-flex align-items-center gap-3">
+              <!-- Notification Bell -->
+              <div class="position-relative" data-bs-toggle="tooltip" title="Notifications">
+                <i class="bi bi-bell fs-4"></i>
+                <span class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger">
+                  3
+                  <span class="visually-hidden">unread messages</span>
+                </span>
+              </div>
+
+              <!-- User Info Dropdown -->
+              <div class="dropdown">
+                <a class="d-flex align-items-center text-decoration-none dropdown-toggle" href="#" role="button"
+                  id="userDropdown" data-bs-toggle="dropdown" aria-expanded="false">
+                  <img src="/img/author2.jpg" id="userPhoto" alt="User Photo" class="rounded-circle me-2" width="36"
+                    height="36" />
+                  <div class="d-none d-md-block text-start">
+                    <div class="fw-semibold" id="userName">Loading...</div>
+                    <small class="text-muted" id="userEmail">loading@email.com</small>
+                  </div>
+                </a>
+                <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="userDropdown">
+                  <li><a class="dropdown-item" href="#">View Profile</a></li>
+                  <li><a class="dropdown-item" href="#">Settings</a></li>
+                  <li>
+                    <hr class="dropdown-divider" />
+                  </li>
+                  <li><a class="dropdown-item text-danger" href="#" id="signOutBtn">Logout</a></li>
+                </ul>
+                <!-- Sign-out Progress Modal -->
+                <div class="modal fade" id="signOutModal" tabindex="-1" aria-hidden="true">
+                  <div class="modal-dialog modal-dialog-centered">
+                    <div class="modal-content bg-white rounded shadow text-center p-4 border-0">
+                      <div class="modal-body">
+                        <div class="spinner-border text-danger mb-3" role="status"></div>
+                        <p class="fw-semibold text-dark mb-0">Signing out...</p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </nav>
+
+
+          <!-- ============ Branch Dashboard (cards row) ================= -->
+          <div id="dashboard" class="content-section active-section">
+            <div class="row g-4 mt-2 text-center">
+              <!-- Current Branch Stock ----------------------------- -->
+              <div class="col-md-4">
+                <div class="card p-4 h-100">
+                  <h6><i class="fas fa-boxes text-primary mb-2 fa-2x"></i></h6>
+                  <h5>Current Branch Stock</h5>
+                  <p id="branchStockTotal" class="fw-bold fs-3 mb-1">–</p>
+                  <p class="small text-muted mb-3">Combined for all products</p>
+                  <button id="branchStockMore" class="btn btn-sm btn-outline-primary">
+                    View More Details
+                  </button>
+                </div>
+              </div>
+
+              <!-- Monthly Sales ------------------------------------ -->
+              <div class="col-md-4">
+                <div class="card p-4 h-100">
+                  <h6><i class="fas fa-chart-line text-success mb-2 fa-2x"></i></h6>
+                  <h5>Total Sales (This Month)</h5>
+                  <p id="monthSalesTotal" class="fw-bold fs-3 mb-1">–</p>
+                  <p class="small text-muted mb-3">Cash + Credit</p>
+                  <button id="salesMore" class="btn btn-sm btn-outline-success">
+                    View More Details
+                  </button>
+                </div>
+              </div>
+
+              <!-- Monthly Expenses --------------------------------- -->
+              <div class="col-md-4">
+                <div class="card p-4 h-100">
+                  <h6><i class="fas fa-money-bill-wave text-warning mb-2 fa-2x"></i></h6>
+                  <h5>Monthly Total Expenses</h5>
+                  <p id="monthExpensesTotal" class="fw-bold fs-3 mb-1">–</p>
+                  <p class="small text-muted mb-3">Current month</p>
+                  <button id="expensesMore" class="btn btn-sm btn-outline-warning">
+                    View More Details
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <!-- Recent activities ----------------------------------- -->
+            <div class="mt-5">
+              <h4 class="section-title mb-3">Recent Activities</h4>
+              <div id="activityFeed" class="list-group"></div>
+            </div>
+          </div>
+
+          <!-- ============ Modals (placed once) ======================== -->
+
+          <!-- Branch stock modal -->
+          <div class="modal fade" id="branchStockModal" tabindex="-1">
+            <div class="modal-dialog modal-lg">
+              <div class="modal-content">
+                <div class="modal-header">
+                  <h5 class="modal-title">Branch Stock Breakdown</h5>
+                  <button class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body table-responsive">
+                  <table class="table table-sm">
+                    <thead class="table-light">
+                      <tr>
+                        <th>Product</th>
+                        <th>Qty</th>
+                      </tr>
+                    </thead>
+                    <tbody id="branchStockBody"></tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Sales modal -->
+          <div class="modal fade" id="salesModal" tabindex="-1">
+            <div class="modal-dialog modal-lg">
+              <div class="modal-content">
+                <div class="modal-header">
+                  <h5 class="modal-title">Sales – Current Month</h5>
+                  <button class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body table-responsive">
+                  <table class="table table-sm">
+                    <thead class="table-light">
+                      <tr>
+                        <th>Date</th>
+                        <th>Cash UGX</th>
+                        <th>Credit UGX</th>
+                        <th>Total UGX</th>
+                      </tr>
+                    </thead>
+                    <tbody id="salesBody"></tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Expenses modal -->
+          <div class="modal fade" id="expensesModal" tabindex="-1">
+            <div class="modal-dialog modal-md">
+              <div class="modal-content">
+                <div class="modal-header">
+                  <h5 class="modal-title">Expenses – Current Month</h5>
+                  <button class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body table-responsive">
+                  <table class="table table-sm">
+                    <thead class="table-light">
+                      <tr>
+                        <th style="width:110px">Date</th>
+                        <th style="width:140px">Total UGX</th>
+                        <th>Details</th>
+                      </tr>
+                    </thead>
+                    <tbody id="expensesBody"></tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </div>
+          <!-- End Dashboard -->
+
+
+
+          <!-- Start Sales Management -->
+          <div id="sales-Management" class="content-section">
+            <!-- sales.html -->
+            <div class="container my-4">
+              <h5>📦 Branch Sales & Cash Movement</h5>
+              <!--═════════════  SALES FORM  ═════════════-->
+              <form id="salesForm" class="card p-3 shadow-sm mb-4">
+                <h5 class="mb-3">New Sale</h5>
+
+                <!-- customer block -->
+                <div class="row g-3 mb-2">
+                  <div class="col-md-4">
+                    <label class="form-label">Customer Name</label>
+                    <input id="custName" class="form-control" placeholder="Walk‑in / Company X" required />
+                  </div>
+                  <div class="col-md-4">
+                    <label class="form-label">Contact / Address</label>
+                    <input id="custContact" class="form-control" />
+                  </div>
+                  <div class="col-md-4">
+                    <label class="form-label">Payment Type</label>
+                    <select id="paymentType" class="form-select" required>
+                      <option value="cash">Cash</option>
+                      <option value="credit">Credit</option>
+                    </select>
+                  </div>
+                </div>
+
+                <!-- sale‑items table -->
+                <div class="table‑responsive">
+                  <table class="table table-sm align-middle" id="saleItemsTable">
+                    <thead class="table-light">
+                      <tr>
+                        <th width="35%">Product</th>
+                        <th width="12%">Unit Price</th>
+                        <th width="12%">Qty</th>
+                        <th width="14%">Line Discount</th>
+                        <th width="15%">Line Total</th>
+                        <th width="12%"></th>
+                      </tr>
+                    </thead>
+                    <tbody><!-- JS rows go here --></tbody>
+                  </table>
+                </div>
+
+                <button id="addItemRow" type="button" class="btn btn-outline-secondary btn-sm mb-3">
+                  + Add Item
+                </button>
+
+                <!-- sale totals -->
+                <div class="row g-3">
+                  <div class="col-md-3 ms-auto">
+                    <label class="form-label">Overall Discount</label>
+                    <input id="overallDisc" type="number" min="0" step="0.01" class="form-control" value="0" />
+                  </div>
+                  <div class="col-md-3">
+                    <label class="form-label fw-bold">Grand Total (UGX)</label>
+                    <input id="grandTotal" class="form-control fw-bold" readonly />
+                  </div>
+                  <div class="col-md-3 d-flex align-items-end">
+                    <button id="saveSaleBtn" class="btn btn-primary w-100">
+                      <span id="saleSpin" class="spinner-border spinner-border-sm d-none me-2"></span>
+                      <span id="saleTxt">Process Sale</span>
+                    </button>
+                  </div>
+                </div>
+              </form>
+
+              <!--═════════════  EXPENSES FORM  ═════════════-->
+              <form id="expenseForm" class="card p-3 shadow-sm mb-4">
+                <h5 class="mb-3">New Expense</h5>
+                <div class="row g-3">
+                  <div class="col-md-6">
+                    <label class="form-label">Expense Details</label>
+                    <input id="expenseNote" class="form-control" required />
+                  </div>
+                  <div class="col-md-3">
+                    <label class="form-label">Amount (UGX)</label>
+                    <input id="expenseAmt" type="number" min="0" step="0.01" class="form-control" required />
+                  </div>
+                  <div class="col-md-3 d-flex align-items-end">
+                    <button id="saveExpBtn" class="btn btn-danger w-100">
+                      <span id="expSpin" class="spinner-border spinner-border-sm d-none me-2"></span>
+                      <span id="expTxt">Save Expense</span>
+                    </button>
+                  </div>
+                </div>
+              </form>
+
+              <!--═════════════  HIDDEN PRINT CONTAINER  ═════════════-->
+              <!-- Receipt Modal -->
+              <div class="modal fade" id="receiptModal" tabindex="-1">
+                <div class="modal-dialog modal-lg modal-dialog-centered">
+                  <div class="modal-content shadow">
+                    <div class="modal-header bg-success text-white py-2">
+                      <h5 class="modal-title">Sales Receipt</h5>
+                      <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                    </div>
+
+                    <div class="modal-body" id="receiptModalBody"></div>
+
+                    <!-- 🆕 print button here -->
+                    <div class="modal-footer">
+                      <button id="printReceiptModal" class="btn btn-outline-primary btn-sm">
+                        <i class="bi bi-printer me-1"></i> Print Receipt
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+            </div>
+          </div>
+
+          <!-- Branch Sales Movement Report -->
+          <div id="sales-movement-report" class="content-section">
+            <div class="container py-4">
+              <!-- <h5>Branch Sales & Cash Movement</h5> -->
+              <h5>📦 Branch Sales & Cash Movement</h5>
+              <!--═════════════  DAILY / RANGE REPORT  ═════════════-->
+              <div class="card p-3 shadow-sm">
+                <h5>Sales & Cash Movement Report</h5>
+                <div class="row g-3 align-items-end">
+                  <div class="col-md-3">
+                    <label class="form-label">From</label>
+                    <input type="date" id="repFrom" class="form-control">
+                  </div>
+                  <div class="col-md-3">
+                    <label class="form-label">To</label>
+                    <input type="date" id="repTo" class="form-control">
+                  </div>
+                  <div class="col-md-3">
+                    <button id="genSalesReport" class="btn btn-outline-secondary w-100">
+                      <span id="repSpin" class="spinner-border spinner-border-sm d-none me-2"></span>
+                      <span id="repTxt">Generate</span>
+                    </button>
+                  </div>
+                </div>
+                <div id="salesReportArea" class="mt-4">
+                  <!-- report injects here -->
+                </div>
+              </div>
+            </div>
+          </div>
+          <!-- End Sales Management -->
+
+
+
+          <!-- Start Inventory -->
+          <div id="inventory" class="content-section">
+            <!-- Stock Movement Panel -->
+            <div class="container py-4">
+              <h5>Branch Stock Movement</h5>
+              <!-- Movement Form -->
+              <form id="movementForm" class="card p-3 shadow-sm mb-4">
+                <div class="row g-3">
+                  <div class="col-md-4">
+                    <label class="form-label">Select Product</label>
+                    <select id="branchProductSelect" class="form-select" required>
+                      <option value="">Loading...</option>
+                    </select>
+                  </div>
+                  <div class="col-md-4">
+                    <label class="form-label">Quantity</label>
+                    <input type="number" id="moveQty" min="1" class="form-control" required />
+                  </div>
+                  <div class="col-md-4">
+                    <label class="form-label">Note (Optional)</label>
+                    <input type="text" id="moveNote" class="form-control" placeholder="Remarks, reason..." />
+                  </div>
+
+                  <!-- Target Branch for Transfer -->
+                  <div id="targetBranchWrap" class="col-md-6">
+                    <label class="form-label">Transfer To (Branch)</label>
+                    <select id="targetBranchSelect" class="form-select" required>
+                      <option value="">Select target branch</option>
+                    </select>
+                  </div>
+
+                  <div class="col-md-6 align-self-end">
+                    <button id="submitMove" type="submit" class="btn btn-primary w-100">
+                      <span id="moveSpinner" class="spinner-border spinner-border-sm d-none me-2" role="status"></span>
+                      <span id="moveText">Save Movement</span>
+                    </button>
+                  </div>
+                </div>
+              </form>
+
+              <!-- Movement History Table -->
+              <div class="card shadow-sm p-3 mb-4">
+                <h5>Recent Stock Movements</h5>
+                <div class="table-responsive">
+                  <table class="table table-bordered table-sm">
+                    <thead class="table-light">
+                      <tr>
+                        <th>Date</th>
+                        <th>Item Code</th>
+                        <th>Item Particulars</th>
+                        <th>Type</th>
+                        <th>Quantity</th>
+                        <th>Note</th>
+                        <th>By</th>
+                      </tr>
+                    </thead>
+                    <tbody id="historyTableBody">
+                      <tr>
+                        <td colspan="7">Loading...</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Branch Stock Movement Report -->
+          <div id="Stock-movement-report" class="content-section">
+            <div class="container py-4">
+              <h5>Branch Stock Movement</h5>
+              <div class="card shadow-sm p-3">
+                <h5>Stock Movement Report</h5>
+                <div class="row g-3 align-items-end">
+                  <div class="col-md-3">
+                    <label class="form-label">From</label>
+                    <input type="date" id="reportFrom" class="form-control">
+                  </div>
+                  <div class="col-md-3">
+                    <label class="form-label">To</label>
+                    <input type="datetime-local" id="reportTo" class="form-control">
+                  </div>
+                  <div class="col-md-3">
+                    <button id="generateReport" class="btn btn-outline-secondary w-100">Generate</button>
+                  </div>
+                </div>
+                <div class="mt-4" id="reportArea">
+                  <p class="text-muted">Choose a date to view movement report.</p>
+                </div>
+              </div>
+            </div>
+          </div>
+          <!-- Start Inventory -->
+
+
+          <!-- Analytics -->
+          <div id="analytics" class="content-section px-2">
+            <!-- Date filter -->
+            <div class="d-flex flex-wrap gap-3 align-items-end mb-4 mt-4">
+              <div>
+                <label class="form-label mb-1">From</label>
+                <input type="date" id="branchStart" class="form-control form-control-sm">
+              </div>
+
+              <div>
+                <label class="form-label mb-1">To</label>
+                <input type="date" id="branchEnd" class="form-control form-control-sm">
+              </div>
+
+              <button id="branchFilterBtn" class="btn btn-primary btn-sm"><i
+                  class="bi bi-arrow-repeat me-1"></i>Refresh</button>
+            </div>
+
+            <!-- Charts Grid -->
+            <div class="row g-4">
+              <div class="col-lg-6">
+                <h6 class="text-center mb-2">Sales Trend</h6>
+                <canvas id="salesTrendChart" height="120"></canvas>
+              </div>
+
+              <div class="col-lg-6">
+                <h6 class="text-center mb-2">Top Selling Products</h6>
+                <canvas id="topProductsChart" height="120"></canvas>
+              </div>
+
+              <div class="col-lg-6">
+                <h6 class="text-center mb-2">Expenses Trend</h6>
+                <canvas id="expensesTrendChart" height="120"></canvas>
+              </div>
+
+              <div class="col-lg-6">
+                <h6 class="text-center mb-2">Available Stock Levels</h6>
+                <canvas id="stockLevelsChart" height="120"></canvas>
+              </div>
+
+              <div class="col-lg-6">
+                <h6 class="text-center mb-2">Payment Type</h6>
+                <canvas id="paymentTypeChart" height="120"></canvas>
+              </div>
+            </div>
+          </div>
+
+
+          <!-- Staff Management -->
+          <div id="staff" class="content-section">
+            <div class="container py-4">
+              <h5>Branch Staff Members</h5>
+              <div class="card shadow-sm p-3 table-responsive">
+                <table class="table table-hover">
+                  <thead>
+                    <tr>
+                      <th>#</th>
+                      <th>Name</th>
+                      <th>Position</th>
+                      <th>Access level</th>
+                      <th>Contact</th>
+                      <th>Email</th>
+                      <th>Schedule</th>
+                      <th>Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+  <script type="module" src="../js/sessionManager.js"></script>
+  <script type="module" src="js/branch-overview.js"></script>
+  <script type="module" src="js/branch-sales&expenses-management.js"></script>
+  <script type="module" src="js/branch-stock-management.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script type="module" src="js/branchAnalytics.js"></script>
+  <script type="module" src="js/branch-staff-display.js"></script>
+
+  <script src="/staff-portal/js/sideBarNavigation.js"></script>
+</body>
+
+</html>

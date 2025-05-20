@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Reset Password</title>
+    <!-- ========== Favicon Icons ========== -->
+    <link rel="shortcut icon" href="/favicon.ico" type="image/x-icon">
+    <link rel="icon" type="image/x-icon" href="/favicon.ico">
+    
+    <link rel="stylesheet" href="../css/resetPassword.css">
+    <!-- Bootstrap CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <!-- Bootstrap JS (includes Popper) -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+</head>
+
+<body>
+    <div class="container">
+        <form id="forgot-password-form">
+            <h3>Forgot Password!</h3>
+            <input type="email" id="email" class="form-control" placeholder="Enter your email" required />
+            <button type="submit">Request Reset Link</button>
+            <div id="message" style="color: lightgreen;"></div>
+        </form>
+    </div>
+    <script type="module" src="../js/resetPassword.js"></script>
+</body>
+
+</html>

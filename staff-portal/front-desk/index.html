@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Receptionist Dashboard</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons/font/bootstrap-icons.css" rel="stylesheet">
+  <script type="module" src="../js/Toasts/successfulLogin.js"></script>
+  <style>
+    body {
+      background-color: #fdfdfd;
+    }
+
+    .sidebar {
+      height: 100vh;
+      background-color: #6f42c1;
+      color: white;
+    }
+
+    .sidebar a {
+      color: white;
+      padding: 12px 20px;
+      display: block;
+      text-decoration: none;
+    }
+
+    .sidebar a:hover {
+      background-color: #5936a2;
+    }
+
+    .content-section {
+      display: none;
+    }
+
+    .active-section {
+      display: block;
+    }
+  </style>
+</head>
+
+<body>
+  <!-- HTML: Loading screen -->
+  <div id="loader"
+    style="position:fixed; top:0; left:0; width:100%; height:100%; background:white; z-index:9999; display:flex; align-items:center; justify-content:center;">
+    <div class="spinner-border text-primary" role="status"></div>
+  </div>
+  <!-- Your actual app content -->
+  <div id="main-content" style="display:none;">
+    <div class="container-fluid">
+      <div class="row">
+        <!-- Sidebar -->
+        <div class="col-md-2 sidebar d-flex flex-column">
+          <h4 class="py-4 px-3 text-center border-bottom">Receptionist</h4>
+          <a href="#" onclick="showSection('schedule')"><i class="bi bi-calendar-plus"></i> Schedule Appointments</a>
+          <a href="#" onclick="showSection('patients')"><i class="bi bi-people"></i> Patient Records</a>
+          <a href="#" onclick="showSection('checkin')"><i class="bi bi-person-check"></i> Check-In Patients</a>
+          <a href="#" onclick="showSection('messages')"><i class="bi bi-chat-left-text"></i> Messages</a>
+        </div>
+
+        <!-- Main Content -->
+        <div class="col-md-10 ms-sm-auto col-lg-10 dashboard-content">
+          <nav class="navbar navbar-expand-lg navbar-light bg-light shadow-sm sticky-top px-3 py-2">
+            <a class="navbar-brand fw-bold" href="#">Hava Naturals</a>
+
+            <div class="ms-auto d-flex align-items-center gap-3">
+              <!-- Notification Bell -->
+              <div class="position-relative" data-bs-toggle="tooltip" title="Notifications">
+                <i class="bi bi-bell fs-4"></i>
+                <span class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger">
+                  3
+                  <span class="visually-hidden">unread messages</span>
+                </span>
+              </div>
+
+              <!-- User Info Dropdown -->
+              <div class="dropdown">
+                <a class="d-flex align-items-center text-decoration-none dropdown-toggle" href="#" role="button"
+                  id="userDropdown" data-bs-toggle="dropdown" aria-expanded="false">
+                  <img src="/img/author2.jpg" id="userPhoto" alt="User Photo" class="rounded-circle me-2" width="36"
+                    height="36" />
+                  <div class="d-none d-md-block text-start">
+                    <div class="fw-semibold" id="userName">Loading...</div>
+                    <small class="text-muted" id="userEmail">loading@email.com</small>
+                  </div>
+                </a>
+                <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="userDropdown">
+                  <li><a class="dropdown-item" href="#">View Profile</a></li>
+                  <li><a class="dropdown-item" href="#">Settings</a></li>
+                  <li>
+                    <hr class="dropdown-divider" />
+                  </li>
+                  <li><a class="dropdown-item text-danger" href="#" id="signOutBtn">Logout</a></li>
+                </ul>
+                <!-- Sign-out Progress Modal -->
+                <div class="modal fade" id="signOutModal" tabindex="-1" aria-hidden="true">
+                  <div class="modal-dialog modal-dialog-centered">
+                    <div class="modal-content bg-white rounded shadow text-center p-4 border-0">
+                      <div class="modal-body">
+                        <div class="spinner-border text-danger mb-3" role="status"></div>
+                        <p class="fw-semibold text-dark mb-0">Signing out...</p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </nav>
+
+          <!-- Schedule Appointments -->
+          <div id="schedule" class="content-section active-section">
+            <h4>Schedule New Appointment</h4>
+            <form class="row g-3">
+              <div class="col-md-4">
+                <label class="form-label">Patient Name</label>
+                <input type="text" class="form-control">
+              </div>
+              <div class="col-md-4">
+                <label class="form-label">Date</label>
+                <input type="date" class="form-control">
+              </div>
+              <div class="col-md-4">
+                <label class="form-label">Time</label>
+                <input type="time" class="form-control">
+              </div>
+              <div class="col-md-6">
+                <label class="form-label">Service</label>
+                <select class="form-select">
+                  <option value="">Select</option>
+                  <option>Pharmacy Consultation</option>
+                  <option>Nutrition Checkup</option>
+                </select>
+              </div>
+              <div class="col-12">
+                <button class="btn btn-primary">Book Appointment</button>
+              </div>
+            </form>
+          </div>
+
+          <!-- Patient Records -->
+          <div id="patients" class="content-section">
+            <h4>Registered Patients</h4>
+            <table class="table table-striped mt-3">
+              <thead>
+                <tr>
+                  <th>Name</th>
+                  <th>Phone</th>
+                  <th>Registered</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>Samuel B.</td>
+                  <td>0701 234567</td>
+                  <td>2025-04-28</td>
+                  <td><button class="btn btn-sm btn-outline-info">View</button></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <!-- Check-In -->
+          <div id="checkin" class="content-section">
+            <h4>Patient Check-In</h4>
+            <form class="row g-3">
+              <div class="col-md-6">
+                <label class="form-label">Patient Name</label>
+                <input type="text" class="form-control">
+              </div>
+              <div class="col-md-6">
+                <label class="form-label">Appointment Time</label>
+                <input type="time" class="form-control">
+              </div>
+              <div class="col-12">
+                <button class="btn btn-success">Mark as Checked-In</button>
+              </div>
+            </form>
+          </div>
+
+          <!-- Messages -->
+          <div id="messages" class="content-section">
+            <h4>Internal Messages</h4>
+            <div class="card">
+              <div class="card-body">
+                <textarea class="form-control mb-2" rows="3" placeholder="Type message..."></textarea>
+                <button class="btn btn-secondary">Send</button>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+  <script type="module" src="../js/sessionManager.js"></script>
+  
+  <script>
+    function showSection(id) {
+      document.querySelectorAll('.content-section').forEach(sec => sec.classList.remove('active-section'));
+      document.getElementById(id).classList.add('active-section');
+    }
+  </script>
+</body>
+
+</html>
