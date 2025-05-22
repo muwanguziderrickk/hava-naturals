@@ -230,8 +230,8 @@ async function generateReport () {
       <div id="reportContent">
         <div class="text-center mb-2">
           <img src="/img/logoShareDisplay.jpeg" style="height:100px" alt="logo"><br>
-          <h5><strong>${branchName} <br> Stock Movement Report </strong>
-          (<small>${fromDate.toLocaleString()}  &nbsp;–&nbsp;  ${toDate.toLocaleString()}</small>)</h5>
+          <h5>${branchName}</h5>
+          <small>Stock Movement Report (${fromDate.toLocaleString()} ➜ ${toDate.toLocaleString()})</small>
         </div>
 
         <table class="table table-sm table-bordered">

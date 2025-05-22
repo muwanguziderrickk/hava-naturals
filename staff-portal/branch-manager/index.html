@@ -33,6 +33,8 @@
           <a href="#" onclick="showSection('dashboard')" class="active-link"><i class="bi bi-speedometer2"></i>
             Dashboard</a>
           <a href="#" onclick="showSection('sales-Management')"><i class="bi bi-cash-coin"></i> Sales & Expenses</a>
+          <a href="#" onclick="showSection('receiptPreview-creditOffset')"><i class="bi bi-receipt"></i> Credit &
+            Receipts</a>
           <a href="#" onclick="showSection('sales-movement-report')"><i class="bi bi-graph-up-arrow"></i> Sales
             Report</a>
           <a href="#" onclick="showSection('inventory')"><i class="bi bi-box"></i> Inventory</a>
@@ -229,27 +231,33 @@
 
 
 
-          <!-- Start Sales Management -->
+          <!-- ═════════════════  SALES MANAGEMENT  ══════════════════ -->
           <div id="sales-Management" class="content-section">
-            <!-- sales.html -->
-            <div class="container my-4">
-              <h5>📦 Branch Sales & Cash Movement</h5>
-              <!--═════════════  SALES FORM  ═════════════-->
-              <form id="salesForm" class="card p-3 shadow-sm mb-4">
-                <h5 class="mb-3">New Sale</h5>
 
-                <!-- customer block -->
-                <div class="row g-3 mb-2">
+            <div class="container my-4">
+
+              <h5 class="fw-semibold mb-3">
+                <i class="bi bi-cash-coin text-primary me-1"></i>
+                Branch Sales <span class="text-muted">&amp;</span> Cash Movement
+              </h5>
+
+              <!-- ░░░░░░░░░░░░  NEW SALE  ░░░░░░░░░░░░ -->
+              <form id="salesForm" class="card shadow-sm p-4 mb-5">
+
+                <h6 class="mb-3 fw-bold">New Sale</h6>
+
+                <!-- customer / payment meta -->
+                <div class="row g-3 mb-3">
                   <div class="col-md-4">
-                    <label class="form-label">Customer Name</label>
-                    <input id="custName" class="form-control" placeholder="Walk‑in / Company X" required />
+                    <label class="form-label">Customer Name</label>
+                    <input id="custName" class="form-control" placeholder="Walk-in / Company X" required>
                   </div>
                   <div class="col-md-4">
-                    <label class="form-label">Contact / Address</label>
-                    <input id="custContact" class="form-control" />
+                    <label class="form-label">Contact / Address</label>
+                    <input id="custContact" class="form-control">
                   </div>
                   <div class="col-md-4">
-                    <label class="form-label">Payment Type</label>
+                    <label class="form-label">Payment Type</label>
                     <select id="paymentType" class="form-select" required>
                       <option value="cash">Cash</option>
                       <option value="credit">Credit</option>
@@ -257,80 +265,86 @@
                   </div>
                 </div>
 
-                <!-- sale‑items table -->
-                <div class="table‑responsive">
-                  <table class="table table-sm align-middle" id="saleItemsTable">
+                <!-- SALE-ITEMS TABLE -->
+                <div class="table-responsive mb-2">
+                  <table id="saleItemsTable" class="table table-sm align-middle">
                     <thead class="table-light">
                       <tr>
                         <th width="35%">Product</th>
-                        <th width="12%">Unit Price</th>
-                        <th width="12%">Qty</th>
-                        <th width="14%">Line Discount</th>
-                        <th width="15%">Line Total</th>
-                        <th width="12%"></th>
+                        <th width="13%">Unit Price</th>
+                        <th width="11%">Qty</th>
+                        <th width="14%">Line Disc&nbsp;%</th>
+                        <th width="15%">Line Total</th>
+                        <th width="11%"></th>
                       </tr>
                     </thead>
-                    <tbody><!-- JS rows go here --></tbody>
+                    <tbody><!-- JS rows --></tbody>
                   </table>
                 </div>
 
                 <button id="addItemRow" type="button" class="btn btn-outline-secondary btn-sm mb-3">
-                  + Add Item
+                  + Add Item
                 </button>
 
-                <!-- sale totals -->
-                <div class="row g-3">
+                <!-- totals & controls -->
+                <div class="row g-3 border-top pt-3">
                   <div class="col-md-3 ms-auto">
-                    <label class="form-label">Overall Discount</label>
-                    <input id="overallDisc" type="number" min="0" step="0.01" class="form-control" value="0" />
+                    <label class="form-label">Overall Discount (%)</label>
+                    <input id="overallDisc" type="number" min="0" max="100" class="form-control" value="0">
                   </div>
+
                   <div class="col-md-3">
-                    <label class="form-label fw-bold">Grand Total (UGX)</label>
-                    <input id="grandTotal" class="form-control fw-bold" readonly />
+                    <label class="form-label fw-semibold">Grand Total (UGX)</label>
+                    <input id="grandTotal" class="form-control fw-semibold" readonly>
                   </div>
+                  <!-- Amount-paid (only if Credit) -->
+                  <div class="col-md-3 d-none" id="paidNowWrap">
+                    <label class="form-label">Amount paid now</label>
+                    <input type="number" id="paidNow" min="0" class="form-control" placeholder="0">
+                  </div>
+
+
                   <div class="col-md-3 d-flex align-items-end">
                     <button id="saveSaleBtn" class="btn btn-primary w-100">
                       <span id="saleSpin" class="spinner-border spinner-border-sm d-none me-2"></span>
-                      <span id="saleTxt">Process Sale</span>
+                      <span id="saleTxt">Process Sale</span>
                     </button>
                   </div>
                 </div>
               </form>
 
-              <!--═════════════  EXPENSES FORM  ═════════════-->
-              <form id="expenseForm" class="card p-3 shadow-sm mb-4">
-                <h5 class="mb-3">New Expense</h5>
+              <!-- ░░░░░░░░░░  NEW EXPENSE  ░░░░░░░░░░ -->
+              <form id="expenseForm" class="card shadow-sm p-4 mb-5">
+                <h6 class="fw-bold mb-3">New Expense</h6>
                 <div class="row g-3">
                   <div class="col-md-6">
-                    <label class="form-label">Expense Details</label>
-                    <input id="expenseNote" class="form-control" required />
+                    <label class="form-label">Expense Details</label>
+                    <input id="expenseNote" class="form-control" required>
                   </div>
                   <div class="col-md-3">
-                    <label class="form-label">Amount (UGX)</label>
-                    <input id="expenseAmt" type="number" min="0" step="0.01" class="form-control" required />
+                    <label class="form-label">Amount (UGX)</label>
+                    <input id="expenseAmt" type="number" min="0" class="form-control" required>
                   </div>
                   <div class="col-md-3 d-flex align-items-end">
                     <button id="saveExpBtn" class="btn btn-danger w-100">
                       <span id="expSpin" class="spinner-border spinner-border-sm d-none me-2"></span>
-                      <span id="expTxt">Save Expense</span>
+                      <span id="expTxt">Save Expense</span>
                     </button>
                   </div>
                 </div>
               </form>
 
-              <!--═════════════  HIDDEN PRINT CONTAINER  ═════════════-->
-              <!-- Receipt Modal -->
+
+
+              <!-- ░░░░  RECEIPT MODAL  ░░░░ -->
               <div class="modal fade" id="receiptModal" tabindex="-1">
-                <div class="modal-dialog modal-lg modal-dialog-centered">
+                <div class="modal-dialog modal-md modal-dialog-centered">
                   <div class="modal-content shadow">
                     <div class="modal-header bg-success text-white py-2">
                       <h5 class="modal-title">Sales Receipt</h5>
-                      <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                      <button class="btn-close" data-bs-dismiss="modal"></button>
                     </div>
-
                     <div class="modal-body" id="receiptModalBody"></div>
-
-                    <!-- 🆕 print button here -->
                     <div class="modal-footer">
                       <button id="printReceiptModal" class="btn btn-outline-primary btn-sm">
                         <i class="bi bi-printer me-1"></i> Print Receipt
@@ -339,18 +353,118 @@
                   </div>
                 </div>
               </div>
-
             </div>
           </div>
+          <!-- ═══════════════════════════════════════════════════ -->
 
-          <!-- Branch Sales Movement Report -->
+
+          <!-- Start handling receipt printing -->
+          <div id="receiptPreview-creditOffset" class="content-section">
+            <div class="container py-4">
+              <!-- ░░░░░░░░░░  OUTSTANDING CREDIT  ░░░░░░░░░░ -->
+              <div class="card shadow-sm p-4 mb-5">
+                <h5 class="fw-bold mb-3">Outstanding Credit</h5>
+                <div class="table-responsive">
+                  <table class="table table-sm" id="creditTable">
+                    <thead class="table-light">
+                      <tr>
+                        <th>Receipt Number</th>
+                        <th>Date</th>
+                        <th>Customer</th>
+                        <th class="text-end">Balance Due</th>
+                        <th></th>
+                      </tr>
+                    </thead>
+                    <tbody id="creditTableBody"><!-- realtime --></tbody>
+                  </table>
+                </div>
+              </div>
+              <!-- ░░░░  ADD-PAYMENT MODAL  ░░░░ -->
+              <div class="modal fade" id="payModal" tabindex="-1">
+                <div class="modal-dialog">
+                  <div class="modal-content">
+                    <form id="payForm">
+                      <div class="modal-header bg-primary text-white py-2">
+                        <h5 class="modal-title">Record Payment</h5>
+                        <button class="btn-close" data-bs-dismiss="modal"></button>
+                      </div>
+                      <div class="modal-body">
+                        <input type="hidden" id="paySaleId">
+                        <p class="mb-2">Balance due:
+                          <span id="payBalance" class="fw-bold text-danger"></span>
+                        </p>
+
+                        <div class="mb-3">
+                          <label class="form-label">Amount Paid</label>
+                          <input id="payAmount" type="number" min="1" class="form-control" required>
+                        </div>
+
+                        <div class="mb-3">
+                          <label class="form-label">Method</label>
+                          <select id="payMethod" class="form-select">
+                            <option>Cash</option>
+                            <option>Mobile Money</option>
+                          </select>
+                        </div>
+                      </div>
+                      <div class="modal-footer">
+                        <button class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
+                        <button id="paySaveBtn" class="btn btn-primary btn-sm">
+                          <span id="paySpin" class="spinner-border spinner-border-sm d-none me-2"></span>
+                          <span id="payTxt">Save Payment</span>
+                        </button>
+                      </div>
+                    </form>
+                  </div>
+                </div>
+              </div>
+
+              <div class="card mb-4 shadow-sm">
+                <div class="card-body">
+                  <h5 class="card-title mb-3">🧾 View & Print Receipts</h5>
+
+                  <div class="row g-3 align-items-end mb-3">
+                    <div class="col-md-3">
+                      <label for="receiptDateFrom" class="form-label">From Date</label>
+                      <input type="date" id="receiptDateFrom" class="form-control" />
+                    </div>
+                    <div class="col-md-3">
+                      <label for="receiptDateTo" class="form-label">To Date</label>
+                      <input type="date" id="receiptDateTo" class="form-control" />
+                    </div>
+                    <div class="col-md-4">
+                      <label for="receiptSearch" class="form-label">Customer Name</label>
+                      <input type="text" id="receiptSearch" class="form-control" placeholder="e.g. Muwa" />
+                    </div>
+                    <div class="col-md-2 d-grid">
+                      <button id="filterReceiptsBtn" class="btn btn-primary">
+                        🔍 Filter
+                      </button>
+                    </div>
+                  </div>
+
+                  <hr class="mb-0" />
+                  <p class="small text-muted mb-2">
+                    Showing receipts based on selected filters.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <div id="receiptPreviewContainer" class="print-preview-list"></div>
+          </div>
+          <!-- End handling receipt printing -->
+
+
+          <!-- =============  SALES MOVEMENT REPORT  ============= -->
           <div id="sales-movement-report" class="content-section">
             <div class="container py-4">
-              <!-- <h5>Branch Sales & Cash Movement</h5> -->
-              <h5>📦 Branch Sales & Cash Movement</h5>
-              <!--═════════════  DAILY / RANGE REPORT  ═════════════-->
-              <div class="card p-3 shadow-sm">
-                <h5>Sales & Cash Movement Report</h5>
+              <h5 class="fw-semibold mb-3">
+                <i class="bi bi-graph-up-arrow text-success me-1"></i>
+                Branch Sales &amp; Cash Movement Report
+              </h5>
+
+              <div class="card shadow-sm p-4">
                 <div class="row g-3 align-items-end">
                   <div class="col-md-3">
                     <label class="form-label">From</label>
@@ -367,9 +481,8 @@
                     </button>
                   </div>
                 </div>
-                <div id="salesReportArea" class="mt-4">
-                  <!-- report injects here -->
-                </div>
+
+                <div id="salesReportArea" class="mt-4"><!-- report inject --></div>
               </div>
             </div>
           </div>

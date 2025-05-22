@@ -1,91 +1,105 @@
-/* =====================================================
-   sales‑module.js  (receipt in modal • full sales report)
-===================================================== */
+/* ===================================================================
+   sales-module.js   –   CASH • CREDIT • PARTIAL PAYMENTS (v2)
+   =================================================================== */
 import {
-  db, collection, doc, getDoc, getDocs, setDoc,
+  db, collection, collectionGroup, doc, getDoc, getDocs, setDoc,
   runTransaction, onSnapshot, serverTimestamp,
   query, where, orderBy
 } from "../../js/firebase-config.js";
 
-/* ─── USER / BRANCH ─────────────────────────────────── */
+/* ── SESSION / BRANCH ───────────────────────────────────────────── */
 const user        = JSON.parse(sessionStorage.getItem("user-information")||"{}");
 const branchId    = user.branchId;
 const branchName  = user.branchName;
-const workerName  = user.fullName||"Unknown";
-if (!branchId) Swal.fire("Error","No branch in session","error");
-/* ---------- get branch profile once ------------------- */
-let branchProfile = {
-  location: '',
-  contact: '',
-  email: '',
-};
+const workerName  = user.fullName || "Unknown";
+if(!branchId){ Swal.fire("Error","No branch in session","error"); throw new Error("no branch"); }
 
-(async () => {
-  try {
-    const snap = await getDoc(doc(db, 'companyBranches', branchId));
-    if (snap.exists()) {
-      branchProfile = { ...branchProfile, ...snap.data() };
-    }
-  } catch (err) {
-    console.error('Cannot load branch profile:', err);
-  }
-})();
+/* ── one-time branch profile (for receipt header) ───────────────── */
+let branchProfile = { location:"", contact:"", email:"" };
+getDoc(doc(db,"companyBranches",branchId))
+  .then(s=>{ if(s.exists()) branchProfile={...branchProfile,...s.data()}; });
 
+/* ── DOM refs – sale entry ─────────────────────────────────────── */
+const productSel    = document.getElementById("branchProductSelect");
+const saleBody      = document.querySelector("#saleItemsTable tbody");
+const addRowBtn     = document.getElementById("addItemRow");
 
-/* ─── DOM REFS ──────────────────────────────────────── */
-const productSel   = document.getElementById("branchProductSelect");
-const saleBody     = document.querySelector("#saleItemsTable tbody");
-const addRowBtn    = document.getElementById("addItemRow");
-const grandTotalEl = document.getElementById("grandTotal");
-const overallDisc  = document.getElementById("overallDisc");
-const salesForm    = document.getElementById("salesForm");
-const saleBtn      = document.getElementById("saveSaleBtn");
-const saleSpin     = document.getElementById("saleSpin");
-const saleTxt      = document.getElementById("saleTxt");
+const paymentSel    = document.getElementById("paymentType");
+const paidNowWrap   = document.getElementById("paidNowWrap");   // div (will toggle)
+const paidNowInput  = document.getElementById("paidNow");       // input inside
 
-const expenseForm  = document.getElementById("expenseForm");
-const expBtn       = document.getElementById("saveExpBtn");
-const expSpin      = document.getElementById("expSpin");
-const expTxt       = document.getElementById("expTxt");
+const overallDisc   = document.getElementById("overallDisc");
+const grandTotalEl  = document.getElementById("grandTotal");
 
-const historyBody  = document.getElementById("historyTableBody");
-const receiptBody  = document.getElementById("receiptModalBody");        // 🆕
-const receiptModal = new bootstrap.Modal(document.getElementById("receiptModal")); // 🆕
+const salesForm     = document.getElementById("salesForm");
+const saleBtn       = document.getElementById("saveSaleBtn");
+const saleSpin      = document.getElementById("saleSpin");
+const saleTxt       = document.getElementById("saleTxt");
 
-/* ─── CACHE ─────────────────────────────────────────── */
+/* ── DOM – receipt / history / credit table ───────────────────── */
+const receiptBody   = document.getElementById("receiptModalBody");
+const receiptModal  = new bootstrap.Modal(document.getElementById("receiptModal"));
+const creditTbody   = document.getElementById("creditTableBody");
+
+/* credit-payment modal */
+const payModal      = new bootstrap.Modal(document.getElementById("payModal"));
+const payForm       = document.getElementById("payForm");
+const paySaleIdInp  = document.getElementById("paySaleId");
+const payBalEl      = document.getElementById("payBalance");
+const payAmtInp     = document.getElementById("payAmount");
+const payMethodSel  = document.getElementById("payMethod");
+const payBtn        = document.getElementById("paySaveBtn");
+const paySpin       = document.getElementById("paySpin");
+const payTxt        = document.getElementById("payTxt");
+
+/* ── local caches ─────────────────────────────────────────────── */
 const productCache={}, priceCache={}; let branchStock={};
 
-/* ─── HELPERS ───────────────────────────────────────── */
-const toast =(m,icon="success")=>Swal.fire({toast:true,position:"top-end",timer:2200,showConfirmButton:false,title:m,icon});
-const money =n=>n.toLocaleString("en-UG",{style:"currency",currency:"UGX",maximumFractionDigits:0});
+/* ── helpers ──────────────────────────────────────────────────── */
+const toast=(m,icon="success")=>Swal.fire({toast:true,position:"top-end",timer:2500,showConfirmButton:false,title:m,icon});
+const money=n=>n.toLocaleString("en-UG",{style:"currency",currency:"UGX",maximumFractionDigits:0});
 
-/* ─── LIVE PRODUCTS & STOCK ─────────────────────────── */
-onSnapshot(collection(db,"companyProducts"),s=>s.forEach(d=>{productCache[d.id]=d.data();priceCache[d.id]=+d.data().sellingPrice||0;}));
-onSnapshot(collection(db,"companyBranches",branchId,"branchStock"),s=>{branchStock={};s.forEach(d=>branchStock[d.id]=d.data().quantity||0);refreshProductSelect();});
+/* ── live caches: products + branch stock ─────────────────────── */
+onSnapshot(collection(db,"companyProducts"), s=>{
+  s.forEach(d=>{ productCache[d.id]=d.data(); priceCache[d.id]=+d.data().sellingPrice||0; });
+});
+onSnapshot(collection(db,"companyBranches",branchId,"branchStock"), s=>{
+  branchStock={}; s.forEach(d=>branchStock[d.id]=d.data().quantity||0);
+  refreshProductSelect();
+});
 
-/* ─── PRODUCT SELECT ───────────────────────────────── */
+/* ── toggle 'amount paid now' field --------------------------------*/
+paymentSel.addEventListener("change",()=> {
+  paidNowWrap.classList.toggle("d-none", paymentSel.value!=="credit");
+});
+
+/* ── build <select> options with items still in stock ───────────── */
 function refreshProductSelect(){
-  const opts=Object.entries(branchStock).filter(([,q])=>q>0).map(([id])=>`<option value="${id}">${productCache[id]?.itemParticulars||id}</option>`).join("");
-  productSel.innerHTML=opts?`<option value="">Choose</option>${opts}`:`<option value="">No stock</option>`;
+  const opts = Object.entries(branchStock)
+    .filter(([,q])=>q>0)
+    .map(([id])=>`<option value="${id}">${productCache[id]?.itemParticulars||id}</option>`).join("");
+  productSel.innerHTML = opts ? `<option value="">Choose</option>${opts}`
+                              : `<option value="">No stock</option>`;
 }
 
-/* ─── SALE ROWS ─────────────────────────────────────── */
-addRowBtn.onclick = ()=>{ saleBody.insertAdjacentHTML("beforeend",rowHTML()); calcTotals(); };
+/* ── add row to sale table ─────────────────────────────────────── */
+addRowBtn.onclick=()=>{ saleBody.insertAdjacentHTML("beforeend",rowHTML()); calcTotals(); };
 const rowHTML=()=>`
 <tr>
   <td><select class="form-select prodSel">${productSel.innerHTML}</select></td>
   <td class="unit">0</td>
-  <td><input type="number" class="form-control qty"  value="1" min="1"></td>
+  <td><input type="number" class="form-control qty" value="1" min="1"></td>
   <td><input type="number" class="form-control disc" value="0" min="0" max="100" placeholder="%"></td>
   <td class="lineTotal fw-bold">0</td>
   <td><button class="btn btn-sm btn-link text-danger remove">&times;</button></td>
 </tr>`;
 
-/* live calc */
+/* ── live totals -------------------------------------------------- */
 saleBody.addEventListener("input",calcTotals);
 saleBody.addEventListener("change",calcTotals);
-saleBody.addEventListener("click",e=>{if(e.target.classList.contains("remove"))e.target.closest("tr").remove(),calcTotals();});
-
+saleBody.addEventListener("click",e=>{
+  if(e.target.closest(".remove")){ e.target.closest("tr").remove(); calcTotals(); }
+});
 function calcTotals(){
   let sub=0;
   saleBody.querySelectorAll("tr").forEach(tr=>{
@@ -93,189 +107,455 @@ function calcTotals(){
     const unit=priceCache[pid]||0;
     const qty =+tr.querySelector(".qty").value||0;
     const disc=+tr.querySelector(".disc").value||0;
-    const line=Math.max(unit*qty*(1-disc/100),0);
+    const line=unit*qty*(1-disc/100);
     tr.querySelector(".unit").textContent=money(unit);
     tr.querySelector(".lineTotal").textContent=money(line);
-    tr.dataset.pid=pid;tr.dataset.qty=qty;tr.dataset.line=line;tr.dataset.disc=disc;
+    Object.assign(tr.dataset,{pid,qty,disc,line});
     sub+=line;
   });
-  const grand=Math.max(sub*(1-(+overallDisc.value||0)/100),0);
-  grandTotalEl.value=money(grand);
+  grandTotalEl.value = money(sub*(1-(+overallDisc.value||0)/100));
 }
 
-/* ─── PROCESS SALE ─────────────────────────────────── */
-salesForm.addEventListener("submit",async e=>{
+/* =================================================================
+   1️⃣  SAVE NEW SALE   (cash / credit / partial deposit)
+   ================================================================= */
+salesForm.addEventListener("submit",saveSale);
+
+async function saveSale(e){
   e.preventDefault();
+
+  /* gather & validate rows --------------------------------------- */
   const rows=[...saleBody.querySelectorAll("tr")];
-  if(!rows.length)return toast("Add items first","info");
+  if(!rows.length) return toast("Add items first","info");
 
   const items=rows.map(tr=>({
-    productId:tr.dataset.pid, qty:+tr.dataset.qty, disc:+tr.dataset.disc, unit:priceCache[tr.dataset.pid]||0
+    productId:tr.dataset.pid,
+    qty      :+tr.dataset.qty,
+    disc     :+tr.dataset.disc,
+    unit     :priceCache[tr.dataset.pid]||0
   }));
 
-  // stock check
-  for(const it of items)
+  /* stock check -------------------------------------------------- */
+  for(const it of items){
     if(it.qty>(branchStock[it.productId]||0))
-      return Swal.fire("Stock Low",`${productCache[it.productId]?.itemParticulars||it.productId} only ${(branchStock[it.productId]||0)} left`,"error");
+      return Swal.fire("Low Stock",
+        `${productCache[it.productId]?.itemParticulars||it.productId} only ${(branchStock[it.productId]||0)} left`,
+        "error");
+  }
 
-  if(!(await Swal.fire({title:"Confirm Sale",icon:"question",showCancelButton:true})).isConfirmed)return;
+  /* numbers ------------------------------------------------------ */
+  const sub = items.reduce((s,i)=>s+i.unit*i.qty*(1-i.disc/100),0);
+  const oDiscPct = +overallDisc.value||0;
+  const grand    = sub*(1-oDiscPct/100);
 
-  saleBtn.disabled=true;saleSpin.classList.remove("d-none");saleTxt.textContent="Processing…";
-  const saleId=`SALE_${Date.now()}`;
-  const payType=document.getElementById("paymentType").value;
-  const oDiscPct=+overallDisc.value||0;
-  const customer=document.getElementById("custName").value.trim()||"Walk‑in";
+  const payType  = paymentSel.value;           // cash | credit
+  const paidNow  = payType==="credit" ? Math.min(+paidNowInput.value||0, grand) : grand;
+  const balance  = grand - paidNow;
+
+  /* confirm ------------------------------------------------------ */
+  if(!(await Swal.fire({title:"Confirm?",text:money(grand),icon:"question",showCancelButton:true})).isConfirmed)
+      return;
+
+  /* busy UI ------------------------------------------------------ */
+  saleBtn.disabled=true; saleSpin.classList.remove("d-none"); saleTxt.textContent="Saving…";
+
+  const saleId  = `SALE_${Date.now()}_${Math.floor(Math.random()*1000)}`;
+  const customer= document.getElementById("custName").value.trim()||"Walk-in";
 
   try{
-    await runTransaction(db,async t=>{
-      /* READS first */
-      const refs=items.map(it=>doc(db,"companyBranches",branchId,"branchStock",it.productId));
-      const snaps=await Promise.all(refs.map(r=>t.get(r)));
-      snaps.forEach((s,i)=>{if((s.data().quantity||0)<items[i].qty)throw new Error("Concurrent stock change");});
-
-      /* WRITES */
+    await runTransaction(db,async tx=>{
+      /* update stock + log --------------------------------------- */
+      const refs = items.map(it=>doc(db,"companyBranches",branchId,"branchStock",it.productId));
+      const snaps=await Promise.all(refs.map(r=>tx.get(r)));
+      snaps.forEach((s,i)=>{
+        if((s.data().quantity||0)<items[i].qty) throw new Error("Stock changed");
+      });
       items.forEach((it,i)=>{
-        const ref=refs[i];const left=(snaps[i].data().quantity||0)-it.qty;
-        if(left===0)t.delete(ref);else t.update(ref,{quantity:left,updatedAt:serverTimestamp()});
-
-        const logId=`BSL_${Date.now()}_${i}`;           // 🆕 predictable ID
-        t.set(doc(db,"companyBranches",branchId,"branchStockLogs",logId),{
-          type:"sale",productId:it.productId,quantity:it.qty,
-          itemParticulars:productCache[it.productId]?.itemParticulars||"",
-          performedBy:workerName,createdAt:serverTimestamp()
-        });
+        const left=(snaps[i].data().quantity||0)-it.qty;
+        left===0 ? tx.delete(refs[i])
+                  : tx.update(refs[i],{quantity:left,updatedAt:serverTimestamp()});
+        tx.set(doc(db,"companyBranches",branchId,"branchStockLogs",`${saleId}_${i}`),
+          {type:"sale",productId:it.productId,quantity:it.qty,
+           itemParticulars:productCache[it.productId]?.itemParticulars||"",
+           performedBy:workerName,createdAt:serverTimestamp()});
       });
 
-      const grand=items.reduce((s,i)=>s+i.unit*i.qty*(1-i.disc/100),0)*(1-oDiscPct/100);
-      // sale document
-      t.set(doc(db,"companyBranches",branchId,"branchSales",saleId),{
-        saleId,customer,paymentType:payType,items,overallDiscountPct:oDiscPct,
-        grandTotal:grand,createdAt:serverTimestamp(),performedBy:workerName
+      /* parent sale ---------------------------------------------- */
+      const saleRef=doc(db,"companyBranches",branchId,"branchSales",saleId);
+      tx.set(saleRef,{
+        saleId, customer, createdAt:serverTimestamp(), performedBy:workerName,
+        paymentType : balance===0?"cash":"credit",
+        status      : balance===0?"Cleared": paidNow?"Partial":"Unpaid",
+        items, overallDiscountPct:oDiscPct,
+        grandTotal:grand, paidAmount:paidNow, balanceDue:balance
       });
+
+      /* immediate deposit sub-doc -------------------------------- */
+      if(paidNow){
+        tx.set(doc(collection(saleRef,"payments"),`PAY_${Date.now()}`),
+          {amount:paidNow,method:payType==="cash"?"cash":"credit-deposit",
+           paidAt:serverTimestamp(),paymentRecordedBy:workerName});
+      }
     });
 
-    toast("Sale recorded");
-    buildReceipt(saleId,{customer,payType,items,oDiscPct});  // modal pops here
-    salesForm.reset();saleBody.innerHTML="";calcTotals();
-    // refreshProductSelect will auto‑update via branchStock snapshot
+    toast("Sale saved");
+    buildReceipt(saleId,{customer,payType:balance? "Credit":"cash",items,oDiscPct,paidNow,balance});
 
-  }catch(err){Swal.fire("Error",err.message,"error");}
-  finally{saleBtn.disabled=false;saleSpin.classList.add("d-none");saleTxt.textContent="Process Sale";}
-});
+    salesForm.reset(); saleBody.innerHTML=""; calcTotals(); paidNowInput.value="";
+    paidNowWrap.classList.add("d-none");         // reset UX
+  }catch(err){
+    console.error(err); Swal.fire("Error",err.message,"error");
+  }finally{
+    saleBtn.disabled=false; saleSpin.classList.add("d-none"); saleTxt.textContent="Process Sale";
+  }
+}
 
-/* ─── RECEIPT (modal) ──────────────────────────────── */
-function buildReceipt(id,{customer,payType,items,oDiscPct}){
-  /* row builder */
-  const rows = items.map(it=>{
-    const net = it.unit*it.qty*(1-it.disc/100);
-    return `<tr>
-      <td class="text-muted">${it.productId}</td>
-      <td>${productCache[it.productId]?.itemParticulars||""}</td>
-      <td class="text-end">${(it.unit)}</td>
-      <td class="text-center">${it.qty}</td>
-      <td class="text-end">${it.disc}%</td>
-      <td class="text-end">${(net)}</td>
-    </tr>`;
+/* =================================================================
+   2️⃣  RECEIPT  (POS-friendly 72 mm, hides rows for cash sales)
+   ── the HTML generator is now reused whenever a payment is added ──
+================================================================= */
+
+/* helper ───────────────────────────────────────────────────────── */
+function renderReceiptHTML({
+  saleId, customer, payLabel,
+  items, oDiscPct = 0,
+  paid = 0, balance = 0,
+  when = new Date()
+}) {
+
+  const bodyRows = items.map(it => {
+    const line = it.unit * it.qty * (1 - it.disc / 100);
+    return `
+      <tr>
+        <td>${productCache[it.productId]?.itemParticulars || it.productId}</td>
+        <td class="text-center">${it.unit}</td>
+        <td class="text-center">${it.qty}</td>
+        <td class="text-center">${it.disc}</td>
+        <td class="text-end">${(line)}</td>
+      </tr>`;
   }).join("");
 
   const sub   = items.reduce((s,i)=>s+i.unit*i.qty*(1-i.disc/100),0);
-  const grand = sub * (1-oDiscPct/100);
+  const grand = sub * (1 - oDiscPct/100);
 
-  receiptBody.innerHTML = `
-    <section id="receiptContent" class="p-3">
-      <div class="d-flex justify-content-between align-items-center mb-2">
-        <div class="d-flex align-items-center gap-2">
-          <img src="/img/logoShareDisplay.jpeg" style="height:100px" alt="logo">
-          <div>
-            <h5 class="m-0 fw-bold">Hava Naturals</h5>
-            <small class="text-muted">${branchName}</small><br>
-            <small class="text-muted">${branchProfile.location}</small><br>
-            <small class="text-muted">${branchProfile.contact} | ${branchProfile.email}</small><br>
-            <small class="text-muted">Website: www.havanaturals.life</small>
-          </div>
-        </div>
-        <div class="text-end small">
-          <div><b>Receipt&nbsp;No:</b> ${id}</div>
-          <div>${(new Date()).toLocaleString()}</div>
-        </div>
-      </div><hr>
+  /* hide Paid / Balance on cash sales */
+  const extra = (paid < grand) ? `
+      <tr><td>Paid</td><td class="text-end">${money(paid)}</td></tr>
+      <tr><td>Balance</td><td class="text-end">${money(balance)}</td></tr>` : "";
 
-      <div class="mb-2 small">
-        <b>Customer:</b> ${customer} &nbsp;|&nbsp;
-        <b>Payment:</b> ${payType}
-      </div>
+  return `
+<style>
+  #receiptContent{max-width:72mm;font-size:13px}
+  #receiptContent table{width:100%}
+  #receiptContent th,#receiptContent td{padding:2px}
+</style>
 
-      <table class="table table-bordered table-sm">
-        <thead class="table-light text-center">
-          <tr><th>ID</th><th>Name</th><th class="text-end">Unit (USh)</th>
-              <th>Qty</th><th class="text-end">Disc %</th><th class="text-end">Total (USh)</th></tr>
-        </thead>
-        <tbody>${rows}</tbody>
-        <tfoot class="fw-bold">
-          <tr><td colspan="5" class="text-end">Sub‑Total</td><td class="text-end">${money(sub)}</td></tr>
-          <tr><td colspan="5" class="text-end">Overall Discount ${oDiscPct}%</td><td class="text-end">${money(sub-grand)}</td></tr>
-          <tr><td colspan="5" class="text-end">Grand Total</td><td class="text-end">${money(grand)}</td></tr>
-        </tfoot>
-      </table>
+<section id="receiptContent">
+  <div class="text-center">
+    <img src="/img/logoShareDisplay.jpeg" style="height:90px" alt="logo"><br>
+    ${branchName}<br>
+    ${branchProfile.location}<br>
+    ${branchProfile.contact}
+  </div><hr>
 
-      <p class="text-center fst-italic small">“Due to the concentration of the minerals, <br> We advise do not
-      drink straight mix with water or fruit juice.”</p>
-      <p class="text-end small">Served by: ${workerName}</p>
-    </section>
-  `;
-  receiptModal.show();
+  <div class="d-flex justify-content-between small">
+    <span>No: ${saleId}</span>
+    <span>${when.toLocaleString()}</span>
+  </div>
+  <div class="small mb-1">
+    <b>Customer:</b> ${customer} | <b>${payLabel}</b>
+  </div>
 
-  /* store receipt html for archive */
-  setDoc(
-    doc(db, "companyBranches", branchId, "branchSalesReceipts", id), // ← this is key
-    { html: receiptBody.innerHTML, createdAt: serverTimestamp(), grandTotal: grand },
-    { merge: true }
-  );
+  <table class="table table-borderless table-sm mb-0">
+    <thead class="table-light text-center">
+      <tr><th>Item</th><th>Unit</th><th>Qty</th><th>↓%</th><th class="text-end">Total</th></tr>
+    </thead>
+    <tbody>${bodyRows}</tbody>
+  </table><hr class="m-0">
+
+  <table class="w-100 small">
+    <tr><td>Sub-Total</td><td class="text-end">${money(sub)}</td></tr>
+    ${ oDiscPct ? `<tr><td>Overall Disc ${oDiscPct}%</td><td class="text-end">-${money(sub-grand)}</td></tr>` : "" }
+    <tr><td><strong>Grand</strong></td><td class="text-end"><strong>${money(grand)}</strong></td></tr>
+    ${extra}
+  </table><hr>
+  <em><p class="text-center small m-0">Due to the concentration of minerals, <br> We advise not to take straight 
+  mix with water or <br> fruit juice.</p>
+  <p class="text-end   small m-0">Served by: ${workerName}</p></em>
+</section>`;
 }
 
+/* original caller – builds, shows & stores the receipt */
+function buildReceipt(
+  id,
+  { customer, payType, items, oDiscPct, paidNow = 0, balance = 0 }
+){
+  const html = renderReceiptHTML({
+    saleId  : id,
+    customer,
+    payLabel: balance ? "Credit (partial)" : payType,
+    items,
+    oDiscPct,
+    paid    : paidNow,
+    balance
+  });
+
+  receiptBody.innerHTML = html;
+  receiptModal.show();
+
+  /* store / overwrite the copy kept in branchSalesReceipts */
+  setDoc(
+    doc(db,"companyBranches",branchId,"branchSalesReceipts",id),
+    {
+      html,
+      grandTotal : items.reduce((s,i)=>s+i.unit*i.qty*(1-i.disc/100),0)*(1-oDiscPct/100),
+      paidAmount : paidNow,
+      balanceDue : balance,
+      updatedAt  : serverTimestamp()
+    },
+    { merge:true }
+  );
+}
 
 document.getElementById("printReceiptModal").onclick = () => printDiv("receiptContent");
 
 
-/* ─── EXPENSE ───────────────────────────────────────── */
-expenseForm.addEventListener("submit",async e=>{
-  e.preventDefault();
-  const note=document.getElementById("expenseNote").value.trim();
-  const amt =+document.getElementById("expenseAmt").value;
-  if(!note||!amt)return;
-  if(!(await Swal.fire({title:"Confirm expense?",text:money(amt),showCancelButton:true})).isConfirmed)return;
-
-  expBtn.disabled=true;expSpin.classList.remove("d-none");expTxt.textContent="Saving…";
-  const expId=`EXPENSE_${Date.now()}`;                              // 🆕
-  try{
-    await setDoc(doc(db,"companyBranches",branchId,"branchExpenses",expId),
-      {note,amount:amt,createdAt:serverTimestamp(),recordedBy:workerName});
-    toast("Expense saved","info");expenseForm.reset();
-  }catch(err){Swal.fire("Error",err.message,"error");}
-  finally{expBtn.disabled=false;expSpin.classList.add("d-none");expTxt.textContent="Save Expense";}
-});
-
-/* ─── SALES HISTORY (same) ─────────────────────────── */
-onSnapshot(query(collection(db,"companyBranches",branchId,"branchSales"),orderBy("createdAt","desc")),snap=>{
-  historyBody.innerHTML="";
-  snap.forEach(s=>{
-    const d=s.data();d.items.forEach(it=>{
-      historyBody.insertAdjacentHTML("beforeend",`
+/* =================================================================
+   3️⃣  OUTSTANDING CREDIT TABLE  (real-time)
+   ================================================================= */
+onSnapshot(
+  query(collection(db,"companyBranches",branchId,"branchSales"),
+        where("status","in",["Unpaid","Partial"]),
+        orderBy("createdAt","desc")),
+  snap=>{
+    creditTbody.innerHTML="";
+    snap.forEach(d=>{
+      creditTbody.insertAdjacentHTML("beforeend",`
         <tr>
-          <td>${d.createdAt?.toDate().toLocaleString()}</td>
-          <td>${it.productId}</td>
-          <td>${productCache[it.productId]?.itemParticulars||""}</td>
-          <td>${it.qty}</td>
-          <td>${money(it.unit*it.qty*(1-it.disc/100))}</td>
-          <td>${d.performedBy}</td>
+          <td>${d.id}</td>
+          <td>${d.data().createdAt.toDate().toLocaleDateString()}</td>
+          <td>${d.data().customer||"-"}</td>
+          <td class="text-end">${money(d.data().balanceDue)}</td>
+          <td class="text-end">
+            <button class="btn btn-sm btn-outline-primary pay-btn"
+                    data-id="${d.id}" data-bal="${d.data().balanceDue}">
+              Add Payment
+            </button>
+          </td>
         </tr>`);
     });
-  });
 });
 
-/* ─── SALES REPORT  (sales + expenses) ─────────────── */
-document.getElementById("genSalesReport").addEventListener("click", generateSalesReport);
-async function generateSalesReport() {
+/* open pay-modal -------------------------------------------------- */
+creditTbody.addEventListener("click",e=>{
+  const btn=e.target.closest(".pay-btn"); if(!btn) return;
+  paySaleIdInp.value=btn.dataset.id;
+  payBalEl.textContent=money(+btn.dataset.bal);
+  payAmtInp.max=+btn.dataset.bal; payAmtInp.value="";
+  payModal.show();
+});
+
+/* =================================================================
+   4️⃣  SAVE A DEPOSIT (transaction)
+   ================================================================= */
+payForm.addEventListener("submit",async e=>{
+  e.preventDefault();
+  const saleId=paySaleIdInp.value;
+  const payAmt=+payAmtInp.value||0;
+  if(!payAmt) return Swal.fire("Enter amount","","warning");
+
+  payBtn.disabled=true; paySpin.classList.remove("d-none"); payTxt.textContent="Saving…";
+  try{
+    await runTransaction(db,async tx=>{
+      const saleRef=doc(db,"companyBranches",branchId,"branchSales",saleId);
+      const snap=await tx.get(saleRef);
+      if(!snap.exists()) throw new Error("Sale missing");
+      const sale=snap.data();
+      if(payAmt>sale.balanceDue) throw new Error("Exceeds balance");
+
+      /* sub-doc */
+      tx.set(doc(collection(saleRef,"payments"),`PAY_${Date.now()}`),
+         {amount:payAmt,method:payMethodSel.value,paidAt:serverTimestamp(),paymentRecordedBy:workerName});
+      /* parent */
+      const newPaid=(sale.paidAmount||0)+payAmt;
+      const newBal = sale.balanceDue-payAmt;
+      tx.update(saleRef,{
+        paidAmount:newPaid,balanceDue:newBal,
+        paymentType:newBal===0?"cash":sale.paymentType,
+        status:newBal===0?"Cleared":"Partial"
+      });
+    });
+
+    toast("Payment recorded");
+    payModal.hide();
+
+    /* 🔄  regenerate the stored receipt */
+    const saleSnap = await getDoc(
+      doc(db,"companyBranches",branchId,"branchSales",saleId)
+    );
+    if (saleSnap.exists()) {
+      const s = saleSnap.data();
+
+      const html = renderReceiptHTML({
+        saleId,
+        customer   : s.customer,
+        payLabel   : s.balanceDue === 0 ? "Cash" : "Credit (partial)",
+        items      : s.items,
+        oDiscPct   : s.overallDiscountPct,
+        paidAmount : s.paidAmount,
+        balance    : s.balanceDue,
+        when       : s.createdAt?.toDate() || new Date()
+      });
+
+      await setDoc(
+        doc(db,"companyBranches",branchId,"branchSalesReceipts",saleId),
+        {
+          html,
+          grandTotal : s.grandTotal,
+          paidAmount : s.paidAmount,
+          balanceDue : s.balanceDue,
+          updatedAt  : serverTimestamp()
+        },
+        { merge:true }
+      );
+    }
+  }catch(err){ console.error(err); Swal.fire("Error",err.message,"error"); }
+  finally{ payBtn.disabled=false; paySpin.classList.add("d-none"); payTxt.textContent="Save Payment"; }
+});
+
+
+/* ================================================================
+   📄  RECEIPT VIEW / PRINT  – branch scoped, POS 72 mm
+   ================================================================= */
+(() => {
+  const listEl = document.getElementById("receiptPreviewContainer");
+  const fromEl = document.getElementById("receiptDateFrom");
+  const toEl = document.getElementById("receiptDateTo");
+  const searchEl = document.getElementById("receiptSearch");
+  const filterBtn = document.getElementById("filterReceiptsBtn");
+
+  if (!listEl) return console.warn("receiptPreviewContainer not found");
+
+  let receipts = [];
+
+  filterBtn?.addEventListener("click", loadReceipts);
+  window.addEventListener("DOMContentLoaded", loadReceipts);
+
+  listEl.addEventListener("click", e => {
+    const btn = e.target.closest("[data-idx]");
+    if (!btn) return;
+    const r = receipts[+btn.dataset.idx];
+    r?.html && printHtmlReceipt(r.html);
+  });
+
+  async function loadReceipts() {
+    listEl.innerHTML = `<div class="text-center my-4"><div class="spinner-border text-primary"></div></div>`;
+
+    const start = fromEl?.value ? new Date(fromEl.value) : todayStart();
+    const end = toEl?.value ? new Date(toEl.value + "T23:59:59") : new Date();
+    if (start > end) return listEl.innerHTML = `<p class="text-danger">"From" date cannot be after "To" date.</p>`;
+
+    const q = searchEl?.value.trim().toLowerCase() || "";
+
+    try {
+      const snap = await getDocs(
+        query(
+          collection(db, "companyBranches", branchId, "branchSalesReceipts"),
+          where("createdAt", ">=", start),
+          where("createdAt", "<=", end),
+          orderBy("createdAt", "desc")
+        )
+      );
+
+      receipts = [];
+      const cards = [];
+
+      snap.forEach(doc => {
+        const r = doc.data();
+        if (q && !r.html?.toLowerCase().includes(q)) return;
+        receipts.push(r);
+        cards.push(renderCard(receipts.length - 1, r));
+      });
+
+      listEl.innerHTML = cards.length ? cards.join("") : "<p>No receipts found.</p>";
+
+    } catch (err) {
+      console.error("Load error:", err);
+      listEl.innerHTML = `<p class="text-danger">Failed to load receipts.</p>`;
+    }
+  }
+
+  const renderCard = (idx, r) => `
+    <div class="border rounded shadow-sm p-2 mb-3 bg-white">
+      <div class="d-flex justify-content-between align-items-center mb-1">
+        <small class="text-muted"><b>${ formatDate(r.createdAt) }</b></small>
+        <button class="btn btn-sm btn-outline-dark" data-idx="${idx}">🖨️ Print</button>
+      </div>
+      <div class="small border-top pt-2" style="max-height:180px;overflow:auto;">
+        ${r.html}
+      </div>
+    </div>`;
+
+  const formatDate = ts => ts?.toDate?.().toLocaleString("en-UG", {
+    dateStyle: "short",
+    timeStyle: "short"
+  }) ?? "-";
+
+  const todayStart = () => new Date(new Date().setHours(0, 0, 0, 0));
+})();
+
+/* ================================================================
+   🖨️  PRINT FUNCTION – duplicate-safe, exact 72 mm width
+   ================================================================= */
+window.printHtmlReceipt = (html) => {
+  if (document.getElementById("___printArea")) return; // prevent double prints
+
+  const wrapper = document.createElement("div");
+  wrapper.id = "___printArea";
+  wrapper.innerHTML = html;
+
+  wrapper.insertAdjacentHTML("beforeend", `
+    <style>
+      @media print {
+        body > * { display:none !important; }
+        #___printArea {
+          display:block !important;
+          position:fixed;
+          inset:0;
+          width:72mm;
+          font-size:13px;
+          margin:auto;
+          background:white !important;
+        }
+      }
+    </style>
+  `);
+
+  document.body.appendChild(wrapper);
+
+  const clean = () => {
+    wrapper.remove();
+    window.removeEventListener("afterprint", clean);
+  };
+
+  window.addEventListener("afterprint", clean);
+
+  try {
+    window.print();
+  } catch (e) {
+    console.error("Print failed:", e);
+    clean();
+  }
+};
+
+
+/* =================================================================
+   5️⃣  SALES REPORT – adds deposits as daily cash (sales + expenses + credit-deposits)
+   ================================================================= */
+document.getElementById("genSalesReport")
+        .addEventListener("click", generateSalesReport);
+
+async function generateSalesReport () {
   const btn  = document.getElementById("genSalesReport");
   const spin = document.getElementById("repSpin");
   const txt  = document.getElementById("repTxt");
@@ -285,157 +565,133 @@ async function generateSalesReport() {
   btn.disabled = true;
 
   try {
-    /* ── dates ───────────────────────────────────────*/
-    const from = document.getElementById("repFrom").value || new Date().toISOString().split("T")[0];
-    const to   = document.getElementById("repTo").value || from;
-    const start = new Date(`${from}T00:00:00`);
-    const end   = new Date(`${to}T23:59:59`);
+    /* 1. resolve date range */
+    const now = new Date();
+    const todayStr = now.toISOString().slice(0, 10);  // YYYY-MM-DD
 
-    /* ── fetch sales + expenses in parallel ───────── */
-    const qSales = query(
-      collection(db, "companyBranches", branchId, "branchSales"),
-      where("createdAt", ">=", start),
-      where("createdAt", "<=", end)
-    );
-    const qExp = query(
-      collection(db, "companyBranches", branchId, "branchExpenses"),
-      where("createdAt", ">=", start),
-      where("createdAt", "<=", end)
-    );
-    const [salesSnap, expSnap] = await Promise.all([
-      getDocs(qSales),
-      getDocs(qExp)
+    const fromStr = document.getElementById("repFrom").value || todayStr;
+    const toStr   = document.getElementById("repTo").value   || todayStr;
+
+    const start = new Date(fromStr + "T00:00:00");
+    const end   = (fromStr === toStr)
+      ? now // if single day and it's today → use "now" as end
+      : new Date(toStr + "T23:59:59");
+
+    /* 2. fetch sales, expenses **and** payments in parallel */
+    const [salesSnap, expSnap, paySnap] = await Promise.all([
+      getDocs(query(
+        collection(db,"companyBranches",branchId,"branchSales"),
+        where("createdAt",">=",start), where("createdAt","<=",end)
+      )),
+      getDocs(query(
+        collection(db,"companyBranches",branchId,"branchExpenses"),
+        where("createdAt",">=",start), where("createdAt","<=",end)
+      )),
+      getDocs(query(
+        collectionGroup(db,"payments"),
+        where("paidAt",">=",start), where("paidAt","<=",end)
+      ))
     ]);
 
-    /* ── aggregate per‑product ───────────────────────*/
-    const agg = new Map();          // id → { name, qty, cash, credit }
-
-    let totalCash   = 0;
-    let totalCredit = 0;
+    /* 3. aggregate sales per-product */
+    const agg = new Map();                 // productId → { name, qty, cash, credit }
+    let totalCash = 0, totalCredit = 0;
 
     salesSnap.forEach(s => {
-      const sale   = s.data();
-      const byCredit = sale.paymentType === "credit";
+      const sale = s.data();
+      const creditPart = sale.paymentType === "credit"
+                           ? (sale.balanceDue ?? 0)          // the *unpaid* bit
+                           : 0;
+      const cashPart   = sale.grandTotal - creditPart;       // what was actually paid on sale-day
 
-      /* 1️⃣ net value PER‑SALE after all discounts */
-      const lineNetTotal = sale.items
-        .reduce((sum, it) => sum + it.unit * it.qty * (1 - it.disc / 100), 0);
+      totalCash   += cashPart;
+      totalCredit += creditPart;
 
-      const grandTotal = sale.grandTotal;            // already includes overallDiscountPct
-      const scale      = lineNetTotal
-                       ? grandTotal / lineNetTotal   // proportion to spread overall disc
-                       : 1;
+      /* proportionally spread discounts across items */
+      const netWithoutOvr = sale.items.reduce(
+        (sum,it)=>sum+it.unit*it.qty*(1-it.disc/100), 0);
+      const scale = netWithoutOvr ? sale.grandTotal / netWithoutOvr : 1;
 
-      sale.items.forEach(it => {
-        const netLine = it.unit * it.qty * (1 - it.disc / 100) * scale;
-
-        if (!agg.has(it.productId)) {
-          agg.set(it.productId, {
-            name  : productCache[it.productId]?.itemParticulars || "",
-            qty   : 0,
-            cash  : 0,
-            credit: 0
-          });
+      sale.items.forEach(it=>{
+        const net = it.unit*it.qty*(1-it.disc/100)*scale;
+        if(!agg.has(it.productId)){
+          agg.set(it.productId,{ name:productCache[it.productId]?.itemParticulars||"",
+                                 qty:0, cash:0, credit:0 });
         }
-
         const rec = agg.get(it.productId);
-        rec.qty += it.qty;
-        if (byCredit) {
-          rec.credit += netLine;
-          totalCredit += netLine;
-        } else {
-          rec.cash += netLine;
-          totalCash += netLine;
-        }
+        rec.qty   += it.qty;
+        rec.cash  += net * (cashPart   / sale.grandTotal);
+        rec.credit+= net * (creditPart / sale.grandTotal);
       });
     });
 
-    /* ── total expenses ─────────────────────────────*/
+    /* 4. add deposits to cash total */
+    let depositsTotal = 0;
+    paySnap.forEach(p => { depositsTotal += p.data().amount || 0; });
+    totalCash += depositsTotal;
+
+    /* 5. build sales rows */
+    const salesRows = [...agg.entries()].map(([id,r])=>`
+      <tr>
+        <td>${id}</td>
+        <td>${r.name}</td>
+        <td class="text-center">${r.qty}</td>
+        <td class="text-end">${(r.cash)}</td>
+        <td class="text-end">${(r.credit)}</td>
+        <td>${workerName}</td>
+      </tr>`).join("");
+
+    /* 6. build expense rows & total */
     let expenseTotal = 0;
-    expSnap.forEach(e => (expenseTotal += e.data().amount));
+    const expRows = expSnap.docs.map(d=>{
+      expenseTotal += d.data().amount||0;
+      return `<tr><td>${d.data().note}</td><td>${(d.data().amount)}</td></tr>`;
+    }).join("");
 
-    /* ── build report table rows ────────────────────*/
-    const rows = [...agg.entries()]
-      .map(([pid, { name, qty, cash, credit }]) => `
-        <tr>
-          <td>${pid}</td>
-          <td>${name}</td>
-          <td class="text-center">${qty}</td>
-          <td class="text-end">${(cash)}</td>
-          <td class="text-end">${(credit)}</td>
-          <td>${workerName}</td>
-        </tr>
-      `)
-      .join("");
-
-    const expRows = expSnap.docs
-      .map(e => `<tr><td>${e.data().note}</td><td>${(
-        e.data().amount
-      )}</td></tr>`)
-      .join("");
-
-    /* ── inject into DOM ────────────────────────────*/
+    /* 7. inject final report HTML */
     document.getElementById("salesReportArea").innerHTML = `
       <div class="d-flex justify-content-end">
-        <button class="btn btn-outline-primary btn-sm"
-                onclick="printDiv('printReport')">
+        <button class="btn btn-outline-primary btn-sm" onclick="printDiv('printReport')">
           <i class="bi bi-printer me-1"></i> Print Report
         </button>
       </div>
 
       <div id="printReport" class="p-3">
         <div class="text-center mb-2">
-          <img src="/img/logoShareDisplay.jpeg" style="height:100px" alt="logo"><br>
-          <h5>${branchName}<br><small>Sales & Cash Report&nbsp;(${from} – ${to})</small></h5>
+          <img src="/img/logoShareDisplay.jpeg" style="height:90px" alt="logo"><br>
+          <h5>${branchName}</h5>
+          <small>Sales & Cash Report (${fromStr} → ${toStr})</small>
         </div>
 
         <table class="table table-sm table-bordered">
           <thead class="table-light">
             <tr>
               <th>Code</th><th>Product</th><th>Qty</th>
-              <th>Cash Sales (USh)</th><th>Credit Sales (USh)</th><th>Recorded by</th>
+              <th>Cash Sales (USh)</th><th>Credit Sales (USh)</th><th>Recorded by</th>
             </tr>
           </thead>
           <tbody>
-            ${
-              rows ||
-              `<tr><td colspan="6" class="text-center">No sales</td></tr>`
-            }
+            ${salesRows || `<tr><td colspan="6" class="text-center">No sales</td></tr>`}
           </tbody>
           <tfoot class="fw-bold">
-            <tr>
-              <td colspan="3" class="text-end">Total Cash</td>
-              <td class="text-end">${money(totalCash)}</td>
-              <td colspan="2"></td>
-            </tr>
-            <tr>
-              <td colspan="3" class="text-end">Total Credit</td>
-              <td class="text-end">${money(totalCredit)}</td>
-              <td colspan="2"></td>
-            </tr>
+            <tr><td colspan="3" class="text-end">Total Cash</td>
+                <td class="text-end">${money(totalCash)}</td><td colspan="2"></td></tr>
+            <tr><td colspan="3" class="text-end">Total Credit</td>
+                <td class="text-end">${money(totalCredit)}</td><td colspan="2"></td></tr>
           </tfoot>
         </table>
 
         <h6 class="mt-4">Expenses</h6>
         <table class="table table-sm table-bordered">
-          <thead class="table-light"><tr><th>Details</th><th>Amount</th></tr></thead>
+          <thead class="table-light"><tr><th>Details</th><th>Amount (USh)</th></tr></thead>
           <tbody>
-            ${
-              expRows ||
-              `<tr><td colspan="2" class="text-center">No expenses</td></tr>`
-            }
+            ${expRows || `<tr><td colspan="2" class="text-center">No expenses</td></tr>`}
           </tbody>
-          <tfoot class="fw-bold">
-            <tr><td class="text-end">Total</td><td>${money(
-              expenseTotal
-            )}</td></tr>
-          </tfoot>
+          <tfoot class="fw-bold"><tr><td class="text-end">Total</td><td>${money(expenseTotal)}</td></tr></tfoot>
         </table>
 
-        <p class="text-end"><em>Net Cash (received):</em> ${money(
-          totalCash - expenseTotal
-        )}</p>
-        <p class="text-end"><em>Prepared by:</em> ${workerName}</p>
+        <p class="text-end"><em>Net Cash (received):</em> ${money(totalCash - expenseTotal)}</p>
+        <p class="text-end"><em>Prepared by:</em> ${workerName}</p>
       </div>
     `;
   } catch (err) {
@@ -449,52 +705,65 @@ async function generateSalesReport() {
 }
 
 
-/* =====================================================
-─── PRINT HELPER (already global) ───
-   GLOBAL  printDiv(id)  –  no duplicates, modal‑safe
-   -----------------------------------------------------
-   • id  –  the element you want printed
-===================================================== */
+/* =================================================================
+   6️⃣  PRINT HELPER  (unchanged tiny util)
+   ================================================================= */
 window.printDiv = (id) => {
   const target = document.getElementById(id);
   if (!target) {
     console.error(`printDiv: element #${id} not found`);
-    Swal?.fire
-      ? Swal.fire("Print error", `Element #${id} not found`, "error")
-      : alert(`Element #${id} not found`);
+    if (typeof Swal !== "undefined" && Swal.fire) {
+      Swal.fire("Print error", `Element #${id} not found`, "error");
+    } else {
+      alert(`Element #${id} not found`);
+    }
     return;
   }
 
-  /* Prevent multiple print areas if user double‑clicks */
   if (document.getElementById("___printArea")) return;
 
-  /* 1️⃣  clone the element into a wrapper */
-  const wrapper   = document.createElement("div");
-  wrapper.id      = "___printArea";
-  wrapper.appendChild(target.cloneNode(true));
+  const clone = target.cloneNode(true);
 
-  /* 2️⃣  add minimal print‑only CSS */
-  const style = document.createElement("style");
-  style.textContent = `
-    /* Hide wrapper on screen */
-    #___printArea { display:none; }
-    /* Only show wrapper when printing, hide everything else */
-    @media print {
-      body > *         { display:none !important; }
-      #___printArea    { display:block !important; }
-      table            { width:100%; border-collapse:collapse; }
-      th,td            { border:1px solid #888; padding:4px; }
-    }`;
-  wrapper.appendChild(style);
+  const wrapper = document.createElement("div");
+  wrapper.id = "___printArea";
+  wrapper.style.position = "fixed";
+  wrapper.style.top = 0;
+  wrapper.style.left = 0;
+  wrapper.style.width = "100%";
+  wrapper.style.height = "100%";
+  wrapper.style.background = "white";
+  wrapper.style.zIndex = 9999;
+  wrapper.style.overflow = "auto";
+  wrapper.style.display = "none";  // Hide on screen by default
 
-  /* 3️⃣  add & print, then clean‑up */
+  wrapper.appendChild(clone);
   document.body.appendChild(wrapper);
 
-  const clean = () => {
-    wrapper.remove();
-    window.removeEventListener("afterprint", clean);
-  };
-  window.addEventListener("afterprint", clean);
+  // Print-only CSS: hide everything except #___printArea
+  const style = document.createElement("style");
+  style.textContent = `
+    @media print {
+      body > * {
+        display: none !important;
+      }
+      #___printArea {
+        display: block !important;
+        position: fixed;
+        inset:0;
+        margin: auto;
+        overflow: visible;
+        background: white !important;
+        z-index: 9999;
+      }
+    }
+  `;
+  wrapper.appendChild(style);
 
-  window.print();              // opens system dialog in SAME tab
+  const cleanUp = () => {
+    wrapper.remove();
+    window.removeEventListener("afterprint", cleanUp);
+  };
+  window.addEventListener("afterprint", cleanUp);
+
+  window.print();
 };
