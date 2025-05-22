@@ -1,270 +1,370 @@
-// Load Products with Available Stock
+/* ==========================================================
+   Branch Stock Management – robust & session-safe
+   ========================================================== */
 import {
-  db, collection, doc, getDoc, getDocs, setDoc, updateDoc,
-  runTransaction, onSnapshot, query, where, orderBy, serverTimestamp
+  db, collection, collectionGroup, doc, getDoc, getDocs,
+  runTransaction, onSnapshot, query, where, orderBy, limit,
+  serverTimestamp
 } from "../../js/firebase-config.js";
 
-const userInfo = JSON.parse(sessionStorage.getItem("user-information") || "{}");
-const branchId = userInfo.branchId;
-const branchName = userInfo.branchName;
-const performedBy = userInfo.fullName || "Unknown User";
+/* ----------------------------------------------------------
+   0️⃣  Wait until Session is ready (populated by
+       sessionManager.js). All scripts that rely on session
+       data should do the same.
+---------------------------------------------------------- */
+await window.sessionReady        // provided by sessionManager.js
 
-if (!branchId) Swal.fire("Error", "No branch found in session", "error");
+/* ----------------------------------------------------------
+   1️⃣  Session constants
+---------------------------------------------------------- */
+const worker   = JSON.parse(sessionStorage.getItem("user-information") || "{}");
+const branchId = sessionStorage.getItem("branchId");
+const branchName = sessionStorage.getItem("branchName") || "";
+const performedBy = worker.fullName || "Unknown User";
 
-const productSel = document.getElementById("branchProductSelect");
-const qtyField = document.getElementById("moveQty");
-const noteField = document.getElementById("moveNote");
-const targetWrap = document.getElementById("targetBranchWrap");
-const targetSel = document.getElementById("targetBranchSelect");
-const form = document.getElementById("movementForm");
-const btn = document.getElementById("submitMove");
-const spin = document.getElementById("moveSpinner");
-const txt = document.getElementById("moveText");
-const historyBody = document.getElementById("historyTableBody");
-
-const productCache = {};
-
-function updateProductSelect(snapshot) {
-  const ids = snapshot.docs.filter(d => (d.data().quantity || 0) > 0).map(d => d.id);
-  if (!ids.length) {
-    productSel.innerHTML = '<option value="">No stock available</option>';
-    return;
-  }
-  getDocs(collection(db, "companyProducts")).then(productSnap => {
-    productSel.innerHTML = '<option value="">Select Product</option>';
-    productSnap.forEach(p => {
-      if (ids.includes(p.id)) {
-        const data = p.data();
-        productCache[p.id] = data;
-        productSel.innerHTML += `<option value="${p.id}">${data.itemParticulars}</option>`;
-      }
-    });
-  });
+if (!branchId) {
+  Swal.fire("Error", "No branch found in session – please reload.", "error");
+  throw new Error("branchId missing");
 }
 
-onSnapshot(collection(db, "companyBranches", branchId, "branchStock"), updateProductSelect);
+/* ----------------------------------------------------------
+   2️⃣  DOM references
+---------------------------------------------------------- */
+const productSel = document.getElementById("branchProductSelect");
+const qtyField   = document.getElementById("moveQty");
+const noteField  = document.getElementById("moveNote");
+const targetWrap = document.getElementById("targetBranchWrap");
+const targetSel  = document.getElementById("targetBranchSelect");
+const form       = document.getElementById("movementForm");
+const btn        = document.getElementById("submitMove");
+const spin       = document.getElementById("moveSpinner");
+const txt        = document.getElementById("moveText");
+const historyBody= document.getElementById("historyTableBody");
 
-onSnapshot(collection(db, "companyBranches"), snap => {
+const reportBtn  = document.getElementById("generateReport");
+const reportArea = document.getElementById("reportArea");
+
+/* ----------------------------------------------------------
+   3️⃣  Local caches
+---------------------------------------------------------- */
+const productCache = new Map();     // id → full doc
+function cacheProduct(pDoc){
+  productCache.set(pDoc.id, pDoc.data());
+}
+
+/* prime cache once */
+getDocs(collection(db,"companyProducts")).then(snap=>snap.forEach(cacheProduct));
+
+/* ----------------------------------------------------------
+   4️⃣  Helpers
+---------------------------------------------------------- */
+const money = n => n.toLocaleString("en-UG",
+                   {style:"currency",currency:"UGX",maximumFractionDigits:0});
+const busy  = (on) => {
+  btn.disabled = on;
+  spin.classList.toggle("d-none", !on);
+  txt.textContent = on ? "Saving…" : "Save Movement";
+};
+
+/* ----------------------------------------------------------
+   5️⃣  Populate <select> elements (always in-sync)
+---------------------------------------------------------- */
+/* local state */
+const inStockIds = new Set();           // productId’s with qty > 0 at *this* branch
+function rebuildProductSelect () {
+  /* header / empty state */
+  productSel.innerHTML = inStockIds.size
+    ? '<option value="">Select Product</option>'
+    : '<option value="">No stock available</option>';
+  /* list every in-stock product that we have meta for */
+  inStockIds.forEach(id => {
+    const meta = productCache.get(id);
+    if (meta) {
+      productSel.insertAdjacentHTML(
+        "beforeend",
+        `<option value="${id}">${meta.itemParticulars}</option>`
+      );
+    }
+  });
+}
+/* 🔄  a) catalogue – keeps productCache fresh */
+onSnapshot(
+  collection(db, "companyProducts"),
+  snap => {
+    snap.docChanges().forEach(ch => {
+      if (ch.type === "removed") productCache.delete(ch.doc.id);
+      else                       cacheProduct(ch.doc);        // “added” or “modified”
+    });
+    rebuildProductSelect();                                   // refresh menu
+  }
+);
+/* 🔄  b) live stock at THIS branch – fills inStockIds */
+onSnapshot(
+  collection(db, "companyBranches", branchId, "branchStock"),
+  snap => {
+    inStockIds.clear();
+    snap.forEach(d => {
+      if ((d.data().quantity || 0) > 0) inStockIds.add(d.id);
+    });
+    rebuildProductSelect();                                   // refresh menu
+  }
+);
+
+
+/* other branches (targets) */
+onSnapshot(collection(db,"companyBranches"), snap=>{
   targetSel.innerHTML = '<option value="">Choose target branch</option>';
-  snap.forEach(d => {
-    if (d.id !== branchId) targetSel.innerHTML += `<option value="${d.id}">${d.data().name}</option>`;
+  snap.forEach(d=>{
+    if(d.id!==branchId)
+      targetSel.insertAdjacentHTML("beforeend",
+        `<option value="${d.id}">${d.data().name}</option>`);
   });
 });
 
-// Transfer Movement Submission
+/* ----------------------------------------------------------
+   6️⃣  Submit transfer form
+---------------------------------------------------------- */
 form.addEventListener("submit", async e => {
   e.preventDefault();
+
   const productId = productSel.value;
-  const qty = parseInt(qtyField.value, 10);
-  const note = noteField.value.trim();
-  const targetId = targetSel.value;
+  const qty       = +qtyField.value;
+  const note      = noteField.value.trim();
+  const targetId  = targetSel.value;
 
   if (!(productId && qty > 0 && targetId))
-    return Swal.fire("Missing", "Fill all fields", "warning");
+    return Swal.fire("Missing", "Fill all fields (product, qty, branch).", "warning");
 
+  const meta = productCache.get(productId) || {};
   const confirm = await Swal.fire({
     title: "Confirm Transfer",
-    text: `Transfer ${qty} units of ${productCache[productId]?.itemParticulars || productId} to ${targetId}?`,
+    text: `Move ${qty} × ${meta.itemParticulars || productId} ➜ ${targetId}?`,
     icon: "question",
     showCancelButton: true
   });
   if (!confirm.isConfirmed) return;
 
-  btn.disabled = true; spin.classList.remove("d-none"); txt.textContent = "Saving…";
-
+  busy(true);
   const now = Date.now();
-  const logId = `BSL_${now}`;
+  const logIdOut = `BSL_${now}`;
+  const logIdIn  = `BSL_${now}_IN`;
+
+  // Pre-declare all doc refs BEFORE transaction starts
+  const srcRef   = doc(db, "companyBranches", branchId, "branchStock", productId);
+  const tgtRef   = doc(db, "companyBranches", targetId, "branchStock", productId);
+  const logOut   = doc(db, "companyBranches", branchId, "branchStockLogs", logIdOut);
+  const logIn    = doc(db, "companyBranches", targetId, "branchStockLogs", logIdIn);
 
   try {
-    const sourceStockRef = doc(db, "companyBranches", branchId, "branchStock", productId);
-    const targetStockRef = doc(db, "companyBranches", targetId, "branchStock", productId);
-    const logRef = doc(db, "companyBranches", branchId, "branchStockLogs", logId);
-    const targetLogRef = doc(db, "companyBranches", targetId, "branchStockLogs", `BSL_${now + 1}`);
+    await runTransaction(db, async tx => {
+      // ✅ All reads happen first
+      const srcSnap = await tx.get(srcRef);
+      const tgtSnap = await tx.get(tgtRef);
 
-    await runTransaction(db, async t => {
-      const snap = await t.get(sourceStockRef);
-      const tgtSnap = await t.get(targetStockRef);
-
-      const current = snap.exists() ? snap.data().quantity : 0;
-      const newQty = current - qty;
-      if (newQty < 0) throw new Error("Not enough stock");
+      const srcQty = srcSnap.exists() ? srcSnap.data().quantity : 0;
+      if (srcQty < qty) throw new Error(`Only ${srcQty} Unit(s) remaining in stock`);
 
       const tgtQty = tgtSnap.exists() ? tgtSnap.data().quantity : 0;
 
-      if (newQty === 0) t.delete(sourceStockRef);
-      else t.set(sourceStockRef, {
+      // ✅ Writes after all reads
+      if (srcQty - qty === 0) {
+        tx.delete(srcRef);
+      } else {
+        tx.update(srcRef, {
+          quantity: srcQty - qty,
+          updatedAt: serverTimestamp()
+        });
+      }
+
+      tx.set(tgtRef, {
         productId,
-        quantity: newQty,
+        quantity: tgtQty + qty,
         updatedAt: serverTimestamp()
       }, { merge: true });
 
-      t.set(logRef, {
-        productId, quantity: qty, type: "transferOut", note,
-        targetBranchId: targetId, performedBy, createdAt: serverTimestamp(),
-        itemParticulars: productCache[productId]?.itemParticulars || ""
-      });
+      const baseLog = {
+        productId,
+        quantity: qty,
+        note,
+        itemParticulars: meta.itemParticulars || "",
+        performedBy,
+        createdAt: serverTimestamp()
+      };
 
-      t.set(targetStockRef, {
-        productId, quantity: tgtQty + qty, updatedAt: serverTimestamp()
-      }, { merge: true });
-
-      t.set(targetLogRef, {
-        productId, quantity: qty, type: "transferIn", note: `From ${branchId}`,
-        targetBranchId: branchId, performedBy, createdAt: serverTimestamp(),
-        itemParticulars: productCache[productId]?.itemParticulars || ""
-      });
+      tx.set(logOut, { ...baseLog, type: "transferOut", targetBranchId: targetId });
+      tx.set(logIn,  { ...baseLog, type: "transferIn",  targetBranchId: branchId });
     });
 
-    Swal.fire("Saved!", "Transfer recorded successfully.", "success");
-    form.reset(); targetWrap.classList.add("d-none");
+    Swal.fire("Saved!", "Transfer recorded.", "success");
+    form.reset();
+    targetWrap.classList.add("d-none");
+
   } catch (err) {
+    console.error(err);
     Swal.fire("Error", err.message, "error");
   } finally {
-    btn.disabled = false; spin.classList.add("d-none"); txt.textContent = "Save Movement";
+    busy(false);
   }
 });
 
-// Movement History Table
-const q = query(
-  collection(db, "companyBranches", branchId, "branchStockLogs"),
-  orderBy("createdAt", "desc")
-);
 
-onSnapshot(q, snap => {
-  historyBody.innerHTML = "";
-  snap.forEach(d => {
-    const l = d.data();
-    const when = l.createdAt?.toDate().toLocaleString() || "";
-    const target = l.type === "transferOut" ? `→ ${l.targetBranchId}` :
-                   l.type === "transferIn" ? `← ${l.targetBranchId}` : "";
-    const row = `<tr>
-      <td>${when}</td>
-      <td>${l.productId}</td>
-      <td>${l.itemParticulars || ""}</td>
-      <td>${l.type}</td>
-      <td>${l.quantity}</td>
-      <td>${l.note || ""} ${target}</td>
-      <td>${l.performedBy || ""}</td>
-    </tr>`;
-    historyBody.insertAdjacentHTML("beforeend", row);
+/* ----------------------------------------------------------
+   7️⃣  Recent Stock Movements  (limited to latest 100)
+---------------------------------------------------------- */
+const MOVES_LIMIT = 100;
+
+onSnapshot(
+  query(
+    collection(db,"companyBranches",branchId,"branchStockLogs"),
+    orderBy("createdAt","desc"),
+    limit(MOVES_LIMIT)
+  ),
+  snap=>{
+    historyBody.innerHTML="";
+    snap.forEach(d=>{
+      const l=d.data();
+      const when = l.createdAt?.toDate().toLocaleString() || "";
+      const target = l.type==="transferOut" ? `→ ${l.targetBranchId}` :
+                     l.type==="transferIn"  ? `← ${l.targetBranchId}` : "";
+      historyBody.insertAdjacentHTML("beforeend",`
+        <tr>
+          <td>${when}</td>
+          <td>${l.productId}</td>
+          <td>${l.itemParticulars||""}</td>
+          <td>${l.type}</td>
+          <td>${l.quantity}</td>
+          <td>${l.note||""} ${target}</td>
+          <td>${l.performedBy||""}</td>
+        </tr>`);
+    });
   });
-});
 
-
-/* ----------  Generate Stock‑Movement Report  ---------- */
-const reportBtn  = document.getElementById("generateReport");
-const reportArea = document.getElementById("reportArea");
-
+/* ----------------------------------------------------------
+   8️⃣  Stock-Movement report  (unchanged logic, safer)
+---------------------------------------------------------- */
 reportBtn.addEventListener("click", generateReport);
 
-async function generateReport () {
-  /* date range: default = today 00:00 → now */
-  const fromInp = document.getElementById("reportFrom");
-  const toInp   = document.getElementById("reportTo");
+async function generateReport(){
+  const fromInp=document.getElementById("reportFrom");
+  const toInp  =document.getElementById("reportTo");
 
-  const fromDate = fromInp.value
-        ? new Date(fromInp.value + "T00:00:00")
-        : new Date(new Date().toISOString().split("T")[0] + "T00:00:00");
+  const fromDate=new Date((fromInp.value||new Date().toISOString().slice(0,10))+"T00:00:00");
+  const toDate  =toInp.value ? new Date(toInp.value+"T23:59:59") : new Date();
 
-  const toDate   = toInp.value
-        ? new Date(toInp.value)
-        : new Date();                       // now
+  reportBtn.disabled=true;
+  reportArea.innerHTML=`<div class="text-center my-3">
+      <div class="spinner-border text-primary"></div><div class="mt-2">Generating…</div></div>`;
 
-  /* UX: show spinner */
-  reportBtn.disabled = true;
-  reportArea.innerHTML = `
-     <div class="text-center my-3">
-       <div class="spinner-border text-primary"></div>
-       <div class="mt-2">Generating report …</div>
-     </div>`;
+  try{
+    const logsSnap=await getDocs(query(
+      collection(db,"companyBranches",branchId,"branchStockLogs"),
+      where("createdAt",">=",fromDate), where("createdAt","<=",toDate)
+    ));
 
-  /* ----- read movement logs (single source) ----- */
-  const logsQ = query(
-    collection(db, "companyBranches", branchId, "branchStockLogs"),
-    where("createdAt", ">=",  fromDate),
-    where("createdAt", "<=",  toDate)
-  );
-  const logsSnap = await getDocs(logsQ);
+    /* aggregate */
+    const agg=new Map();  // pid→{sales,in,out}
+    logsSnap.forEach(l=>{
+      const d=l.data();
+      if(!agg.has(d.productId)) agg.set(d.productId,{sales:0,in:0,out:0});
+      const rec=agg.get(d.productId);
+      if(d.type==="sale")        rec.sales+=d.quantity;
+      if(d.type==="transferIn")  rec.in   +=d.quantity;
+      if(d.type==="transferOut") rec.out  +=d.quantity;
+    });
 
-  /* aggregate */
-  const agg = new Map();          // pid → {sales,in,out}
-  const take = (pid, key, q) => {
-    if (!agg.has(pid)) agg.set(pid, {sales:0,in:0,out:0});
-    agg.get(pid)[key] += q;
-  };
+    /* rows */
+    const rows=[];
+    for(const [pid, stat] of agg){
+      /* opening=closing+out+sales-in  (snapshot at end) */
+      const stockSnap = await getDoc(doc(db,"companyBranches",branchId,"branchStock",pid));
+      const closing   = stockSnap.exists()?stockSnap.data().quantity:0;
+      const opening   = closing+stat.out+stat.sales-stat.in;
+      const meta=productCache.get(pid)||{itemCode:pid,itemParticulars:""};
+      rows.push(`<tr>
+        <td>${meta.itemCode}</td><td>${meta.itemParticulars}</td>
+        <td>${opening}</td><td>${stat.sales}</td><td>${stat.out}</td>
+        <td>${stat.in}</td><td>${closing}</td></tr>`);
+    }
 
-  logsSnap.forEach(l => {
-    const d = l.data();
-    if (d.type === "sale")        take(d.productId, "sales",       d.quantity);
-    if (d.type === "transferIn")  take(d.productId, "in",          d.quantity);
-    if (d.type === "transferOut") take(d.productId, "out",         d.quantity);
-  });
+    reportArea.innerHTML = rows.length
+      ? `<div class="d-flex justify-content-end">
+           <button class="btn btn-outline-primary btn-sm" onclick="printDiv('reportContent')">
+             <i class="bi bi-printer me-1"></i> Print Report
+           </button></div>
+         <div id="reportContent">
+           <div class="text-center mb-2">
+             <img src="/img/logoShareDisplay.jpeg" style="height:90px"><br>
+             <h5>${branchName}</h5>
+             <small>Stock Movement Report (${fromDate.toLocaleString()} ➜ ${toDate.toLocaleString()})</small>
+           </div>
+           <table class="table table-sm table-bordered">
+             <thead class="table-light"><tr>
+               <th>Item Code</th><th>Item Particulars</th><th>Opening Stock</th>
+               <th>Sales</th><th>Transfer Out</th><th>Transfer In</th><th>Closing Stock</th>
+             </tr></thead><tbody>${rows.join("")}</tbody>
+           </table>
+           <p class="text-end"><em>Prepared by:</em> ${performedBy}</p>
+         </div>`
+      : `<div class="alert alert-info">No movement recorded in this period.</div>`;
 
-  /* rows */
-  const rows = [];
-  for (const [pid, {sales, in:inn, out}] of agg) {
-    const stockRef   = doc(db,"companyBranches",branchId,"branchStock",pid);
-    const closeSnap  = await getDoc(stockRef);
-    const closing    = closeSnap.exists() ? closeSnap.data().quantity : 0;
-    const opening    = closing + out + sales - inn;
-
-    const meta = productCache[pid] || {itemCode: pid, itemParticulars:""};
-    rows.push(`
-      <tr>
-        <td>${meta.itemCode}</td>
-        <td>${meta.itemParticulars}</td>
-        <td>${opening}</td>
-        <td>${sales}</td>
-        <td>${out}</td>
-        <td>${inn}</td>
-        <td>${closing}</td>
-      </tr>`);
+  }catch(err){
+    console.error(err);
+    Swal.fire("Error", err.message, "error");
+  }finally{
+    reportBtn.disabled=false;
   }
-
-  /* render */
-  reportArea.innerHTML = rows.length
-    ? `
-      <div class="d-flex justify-content-end"><button class="btn btn-outline-primary btn-sm" onclick="printDiv('reportContent')">
-        <i class="bi bi-printer me-1"></i> Print Report
-      </button></div>
-      <div id="reportContent">
-        <div class="text-center mb-2">
-          <img src="/img/logoShareDisplay.jpeg" style="height:100px" alt="logo"><br>
-          <h5>${branchName}</h5>
-          <small>Stock Movement Report (${fromDate.toLocaleString()} ➜ ${toDate.toLocaleString()})</small>
-        </div>
-
-        <table class="table table-sm table-bordered">
-          <thead class="table-light">
-            <tr>
-              <th>Item Code</th><th>Item Particulars</th><th>Opening Stock</th>
-              <th>Sales</th><th>Transfer Out</th><th>Transfer In</th><th>Closing Stock</th>
-            </tr>
-          </thead>
-          <tbody>${rows.join("")}</tbody>
-        </table>
-
-        <p class="text-end"><em>Prepared by:</em> ${performedBy}</p>
-      </div>`
-    : `<div class='alert alert-info'>No movement recorded in selected period.</div>`;
-
-  reportBtn.disabled = false;
 }
 
-
-window.printReport = () => {
-  const report = document.getElementById("reportContent");
-  if (!report || !report.innerHTML.trim()) {
-    return Swal.fire("Nothing to export", "Generate a report first.", "info");
+/* ----------------------------------------------------------
+   9️⃣  Simple print helper – same-tab dialog + white page
+---------------------------------------------------------- */
+window.printDiv = (id) => {
+  const el = document.getElementById(id);
+  if (!el || !el.innerHTML.trim()) {
+    return Swal.fire("Error", "Nothing to print", "info");
   }
 
-  const original = document.body.innerHTML;
-  document.body.innerHTML = `
-    <div style="margin: 20px; font-family: Arial, sans-serif;">
-      ${report.innerHTML}
-    </div>
-  `;
+  /* clone all <link rel="stylesheet"> and <style> now on the page */
+  const styles = [...document.querySelectorAll('link[rel="stylesheet"], style')]
+    .map(node => node.outerHTML)
+    .join("");
 
-  window.print();
-  document.body.innerHTML = original;
+  /* build printable markup */
+  const html = `<!doctype html>
+    <html>
+      <head>
+        <meta charset="utf-8">
+        <title>Print</title>
+        ${styles}
+        <style>
+          /* ensure crisp white and tight margins for A4 / POS */
+          body { background:#fff !important; color:#000; }
+          @media print { @page { size:A4 portrait; margin:12mm } }
+          table { width:100%; border-collapse:collapse; font-size:12px }
+          th,td { border:1px solid #888; padding:4px }
+        </style>
+      </head>
+      <body>${el.outerHTML}</body>
+    </html>`;
+
+  /* create hidden iframe in current tab */
+  const iframe = document.createElement("iframe");
+  Object.assign(iframe.style, {
+    position: "fixed",
+    right: 0, bottom: 0,
+    width: 0, height: 0,
+    border: "0", visibility: "hidden"
+  });
+  document.body.appendChild(iframe);
+
+  iframe.onload = () => {
+    iframe.contentWindow.focus();     // for Safari
+    iframe.contentWindow.print();     // open system dialog
+    setTimeout(() => iframe.remove(), 1000); // tidy up
+  };
+
+  /* write & close – triggers onload in most browsers */
+  iframe.contentDocument.open();
+  iframe.contentDocument.write(html);
+  iframe.contentDocument.close();
 };

@@ -8,6 +8,8 @@ import {
 } from "../../js/firebase-config.js";
 
 /* ── SESSION / BRANCH ───────────────────────────────────────────── */
+// make sure the worker record is already in sessionStorage
+await window.sessionReady;
 const user        = JSON.parse(sessionStorage.getItem("user-information")||"{}");
 const branchId    = user.branchId;
 const branchName  = user.branchName;
@@ -47,7 +49,6 @@ const payForm       = document.getElementById("payForm");
 const paySaleIdInp  = document.getElementById("paySaleId");
 const payBalEl      = document.getElementById("payBalance");
 const payAmtInp     = document.getElementById("payAmount");
-const payMethodSel  = document.getElementById("payMethod");
 const payBtn        = document.getElementById("paySaveBtn");
 const paySpin       = document.getElementById("paySpin");
 const payTxt        = document.getElementById("payTxt");
@@ -190,15 +191,18 @@ async function saveSale(e){
         grandTotal:grand, paidAmount:paidNow, balanceDue:balance
       });
 
-      /* immediate deposit sub-doc -------------------------------- */
-      if(paidNow){
-        tx.set(doc(collection(saleRef,"payments"),`PAY_${Date.now()}`),
-          {amount:paidNow,method:payType==="cash"?"cash":"credit-deposit",
-           paidAt:serverTimestamp(),paymentRecordedBy:workerName});
+      /* immediate deposit sub-doc – ONLY for credit sales -------- */
+      if(payType === "credit" && paidNow){
+          tx.set(
+            doc(collection(saleRef,"payments"),`PAY_${Date.now()}`),
+          { amount: paidNow,
+            method: "credit-deposit",
+            paidAt: serverTimestamp(),
+            paymentRecordedBy: workerName });
       }
     });
 
-    toast("Sale saved");
+    toast("Sale successfully saved");
     buildReceipt(saleId,{customer,payType:balance? "Credit":"cash",items,oDiscPct,paidNow,balance});
 
     salesForm.reset(); saleBody.innerHTML=""; calcTotals(); paidNowInput.value="";
@@ -211,7 +215,7 @@ async function saveSale(e){
 }
 
 /* =================================================================
-   2️⃣  RECEIPT  (POS-friendly 72 mm, hides rows for cash sales)
+    RECEIPT  (POS-friendly 72 mm, hides rows for cash sales)
    ── the HTML generator is now reused whenever a payment is added ──
 ================================================================= */
 
@@ -311,6 +315,7 @@ function buildReceipt(
       grandTotal : items.reduce((s,i)=>s+i.unit*i.qty*(1-i.disc/100),0)*(1-oDiscPct/100),
       paidAmount : paidNow,
       balanceDue : balance,
+      createdAt  : serverTimestamp(),
       updatedAt  : serverTimestamp()
     },
     { merge:true }
@@ -318,6 +323,71 @@ function buildReceipt(
 }
 
 document.getElementById("printReceiptModal").onclick = () => printDiv("receiptContent");
+
+
+
+/* =================================================================
+   2️⃣  SAVE NEW EXPENSE  (branchExpenses collection)
+   ================================================================= */
+{
+  const expForm = document.getElementById("expenseForm");
+  if (expForm) {
+    /* field refs -------------------------------------------------- */
+    const expNote = document.getElementById("expenseNote");
+    const expAmt  = document.getElementById("expenseAmt");
+    const expBtn  = document.getElementById("saveExpBtn");
+    const expSpin = document.getElementById("expSpin");
+    const expTxt  = document.getElementById("expTxt");
+
+    expForm.addEventListener("submit", async (e) => {
+      e.preventDefault();
+
+      const note = expNote.value.trim();
+      const amt  = +expAmt.value || 0;
+
+      /* basic validation */
+      if (!note || !amt) {
+        return Swal.fire("Missing", "Enter both details and amount", "warning");
+      }
+
+      /* confirmation */
+      const ok = await Swal.fire({
+        title: "Confirm expense?",
+        html: `<b>${note}</b><br>${money(amt)}`,
+        icon: "question",
+        showCancelButton: true
+      });
+      if (!ok.isConfirmed) return;
+
+      /* busy UI */
+      expBtn.disabled = true;
+      expSpin.classList.remove("d-none");
+      expTxt.textContent = "Saving…";
+
+      try {
+        const expId = `EXP_${Date.now()}`;
+        await setDoc(
+          doc(db, "companyBranches", branchId, "branchExpenses", expId),
+          {
+            note,
+            amount     : amt,
+            recordedBy : workerName,
+            createdAt  : serverTimestamp()
+          }
+        );
+        toast("Expense saved");
+        expForm.reset();
+      } catch (err) {
+        console.error(err);
+        Swal.fire("Error", err.message, "error");
+      } finally {
+        expBtn.disabled = false;
+        expSpin.classList.add("d-none");
+        expTxt.textContent = "Save Expense";
+      }
+    });
+  }
+}
 
 
 /* =================================================================
@@ -374,8 +444,11 @@ payForm.addEventListener("submit",async e=>{
       if(payAmt>sale.balanceDue) throw new Error("Exceeds balance");
 
       /* sub-doc */
-      tx.set(doc(collection(saleRef,"payments"),`PAY_${Date.now()}`),
-         {amount:payAmt,method:payMethodSel.value,paidAt:serverTimestamp(),paymentRecordedBy:workerName});
+      tx.set(
+        doc(collection(saleRef,"payments"),`PAY_${Date.now()}`),
+          { amount: payAmt, method: "credit-deposit", 
+            paidAt: serverTimestamp(), 
+            paymentRecordedBy: workerName });
       /* parent */
       const newPaid=(sale.paidAmount||0)+payAmt;
       const newBal = sale.balanceDue-payAmt;
@@ -425,16 +498,23 @@ payForm.addEventListener("submit",async e=>{
 
 
 /* ================================================================
-   📄  RECEIPT VIEW / PRINT  – branch scoped, POS 72 mm
+   📄  RECEIPT VIEW / PRINT – branch scoped, POS 72 mm
    ================================================================= */
-(() => {
-  const listEl = document.getElementById("receiptPreviewContainer");
-  const fromEl = document.getElementById("receiptDateFrom");
-  const toEl = document.getElementById("receiptDateTo");
-  const searchEl = document.getElementById("receiptSearch");
-  const filterBtn = document.getElementById("filterReceiptsBtn");
+(async () => {
+  await window.sessionReady;                    // ensure branchId is ready
 
+  const listEl   = document.getElementById("receiptPreviewContainer");
   if (!listEl) return console.warn("receiptPreviewContainer not found");
+
+  const fromEl   = document.getElementById("receiptDateFrom");
+  const toEl     = document.getElementById("receiptDateTo");
+  const searchEl = document.getElementById("receiptSearch");
+  const filterBtn= document.getElementById("filterReceiptsBtn");
+
+  /* set “today” as default in the two date inputs */
+  const todayISO = new Date().toISOString().slice(0,10);
+  if (fromEl && !fromEl.value) fromEl.value = todayISO;
+  if (toEl   && !toEl.value)   toEl.value   = todayISO;
 
   let receipts = [];
 
@@ -448,12 +528,19 @@ payForm.addEventListener("submit",async e=>{
     r?.html && printHtmlReceipt(r.html);
   });
 
-  async function loadReceipts() {
-    listEl.innerHTML = `<div class="text-center my-4"><div class="spinner-border text-primary"></div></div>`;
+  /* -------------------------------------------------------------- */
+  async function loadReceipts () {
+    listEl.innerHTML =
+      `<div class="text-center my-4"><div class="spinner-border text-primary"></div></div>`;
 
-    const start = fromEl?.value ? new Date(fromEl.value) : todayStart();
-    const end = toEl?.value ? new Date(toEl.value + "T23:59:59") : new Date();
-    if (start > end) return listEl.innerHTML = `<p class="text-danger">"From" date cannot be after "To" date.</p>`;
+    const start = new Date((fromEl?.value || todayISO) + "T00:00:00");
+    const end   = (toEl?.value)
+                    ? new Date(toEl.value + "T23:59:59")
+                    : new Date();
+    if (start > end) {
+      listEl.innerHTML = `<p class="text-danger">"From" date cannot be after "To" date.</p>`;
+      return;
+    }
 
     const q = searchEl?.value.trim().toLowerCase() || "";
 
@@ -477,7 +564,9 @@ payForm.addEventListener("submit",async e=>{
         cards.push(renderCard(receipts.length - 1, r));
       });
 
-      listEl.innerHTML = cards.length ? cards.join("") : "<p>No receipts found.</p>";
+      listEl.innerHTML = cards.length
+        ? cards.join("")
+        : "<p class='text-muted'>No receipts found for this period.</p>";
 
     } catch (err) {
       console.error("Load error:", err);
@@ -485,10 +574,11 @@ payForm.addEventListener("submit",async e=>{
     }
   }
 
+  /* small card preview ------------------------------------------------ */
   const renderCard = (idx, r) => `
     <div class="border rounded shadow-sm p-2 mb-3 bg-white">
       <div class="d-flex justify-content-between align-items-center mb-1">
-        <small class="text-muted"><b>${ formatDate(r.createdAt) }</b></small>
+        <small class="text-muted"><b>${ formatTS(r.createdAt) }</b></small>
         <button class="btn btn-sm btn-outline-dark" data-idx="${idx}">🖨️ Print</button>
       </div>
       <div class="small border-top pt-2" style="max-height:180px;overflow:auto;">
@@ -496,13 +586,13 @@ payForm.addEventListener("submit",async e=>{
       </div>
     </div>`;
 
-  const formatDate = ts => ts?.toDate?.().toLocaleString("en-UG", {
-    dateStyle: "short",
-    timeStyle: "short"
-  }) ?? "-";
-
-  const todayStart = () => new Date(new Date().setHours(0, 0, 0, 0));
+  const formatTS = ts =>
+    ts?.toDate?.().toLocaleString("en-UG", {
+      dateStyle: "short",
+      timeStyle: "short"
+    }) ?? "-";
 })();
+
 
 /* ================================================================
    🖨️  PRINT FUNCTION – duplicate-safe, exact 72 mm width
@@ -565,19 +655,16 @@ async function generateSalesReport () {
   btn.disabled = true;
 
   try {
-    /* 1. resolve date range */
-    const now = new Date();
-    const todayStr = now.toISOString().slice(0, 10);  // YYYY-MM-DD
-
-    const fromStr = document.getElementById("repFrom").value || todayStr;
-    const toStr   = document.getElementById("repTo").value   || todayStr;
+    /* 1. date range ------------------------------------------------ */
+    const todayISO = new Date().toISOString().slice(0,10);
+    const fromStr  = document.getElementById("repFrom").value || todayISO;
+    const toStr    = document.getElementById("repTo").value   || todayISO;
 
     const start = new Date(fromStr + "T00:00:00");
-    const end   = (fromStr === toStr)
-      ? now // if single day and it's today → use "now" as end
-      : new Date(toStr + "T23:59:59");
+    const end   = (fromStr === toStr) ? new Date()            // “today → now”
+                                      : new Date(toStr + "T23:59:59");
 
-    /* 2. fetch sales, expenses **and** payments in parallel */
+    /* 2. fetch data in parallel ----------------------------------- */
     const [salesSnap, expSnap, paySnap] = await Promise.all([
       getDocs(query(
         collection(db,"companyBranches",branchId,"branchSales"),
@@ -589,49 +676,76 @@ async function generateSalesReport () {
       )),
       getDocs(query(
         collectionGroup(db,"payments"),
+        where("method","==","credit-deposit"),
         where("paidAt",">=",start), where("paidAt","<=",end)
       ))
     ]);
 
-    /* 3. aggregate sales per-product */
-    const agg = new Map();                 // productId → { name, qty, cash, credit }
-    let totalCash = 0, totalCredit = 0;
+    /* 3. build a quick lookup of sales already inside the range --- */
+    const inRangeSaleIds = new Set( salesSnap.docs.map(d => d.id) );
+
+    /* 4. aggregate sales per product ------------------------------ */
+    const agg = new Map();         // productId → { name, qty, cash, credit }
+    let  totalCash = 0, totalCredit = 0;
 
     salesSnap.forEach(s => {
-      const sale = s.data();
-      const creditPart = sale.paymentType === "credit"
-                           ? (sale.balanceDue ?? 0)          // the *unpaid* bit
-                           : 0;
-      const cashPart   = sale.grandTotal - creditPart;       // what was actually paid on sale-day
+      const sale        = s.data();
+      const paidAmount  = sale.paidAmount  || 0;   // cash we have *right now*
+      const balanceDue  = sale.balanceDue  || 0;   // outstanding credit
 
-      totalCash   += cashPart;
-      totalCredit += creditPart;
+      totalCash   += paidAmount;
+      totalCredit += balanceDue;
 
       /* proportionally spread discounts across items */
-      const netWithoutOvr = sale.items.reduce(
-        (sum,it)=>sum+it.unit*it.qty*(1-it.disc/100), 0);
+      const netWithoutOvr = sale.items
+        .reduce((sum,i)=>sum + i.unit*i.qty*(1-i.disc/100), 0);
       const scale = netWithoutOvr ? sale.grandTotal / netWithoutOvr : 1;
 
-      sale.items.forEach(it=>{
-        const net = it.unit*it.qty*(1-it.disc/100)*scale;
-        if(!agg.has(it.productId)){
-          agg.set(it.productId,{ name:productCache[it.productId]?.itemParticulars||"",
-                                 qty:0, cash:0, credit:0 });
+      sale.items.forEach(it => {
+        const net = it.unit * it.qty * (1 - it.disc/100) * scale;
+        if (!agg.has(it.productId)) {
+          agg.set(it.productId, {
+            name   : productCache[it.productId]?.itemParticulars || "",
+            qty    : 0,
+            cash   : 0,
+            credit : 0
+          });
         }
-        const rec = agg.get(it.productId);
-        rec.qty   += it.qty;
-        rec.cash  += net * (cashPart   / sale.grandTotal);
-        rec.credit+= net * (creditPart / sale.grandTotal);
+        const rec   = agg.get(it.productId);
+        const cashR = paidAmount  / sale.grandTotal;
+        const credR = balanceDue  / sale.grandTotal;
+
+        rec.qty    += it.qty;
+        rec.cash   += net * cashR;
+        rec.credit += net * credR;
       });
     });
 
-    /* 4. add deposits to cash total */
+    /* 5. add CREDIT-DEPOSIT payments that belong to THIS branch
+          and whose parent sale is not already inside the range. */
     let depositsTotal = 0;
-    paySnap.forEach(p => { depositsTotal += p.data().amount || 0; });
+    paySnap.forEach(p => {
+      const pathSeg   = p.ref.path.split("/");   // ["companyBranches", "{branchId}", …]
+      const payBranch = pathSeg[1];              // branchId embedded in the path
+
+      if (payBranch !== branchId) return;        // 🚫 skip payments from other branches
+
+      const saleId = p.ref.parent.parent.id;     // parent sale document id
+      if (!inRangeSaleIds.has(saleId)) {
+        depositsTotal += p.data().amount || 0;
+      }
+    });
     totalCash += depositsTotal;
 
-    /* 5. build sales rows */
-    const salesRows = [...agg.entries()].map(([id,r])=>`
+    /* 6. build expenses ------------------------------------------- */
+    let expenseTotal = 0;
+    const expRows = expSnap.docs.map(d => {
+      expenseTotal += d.data().amount || 0;
+      return `<tr><td>${d.data().note}</td><td class="">${(d.data().amount)}</td></tr>`;
+    }).join("");
+
+    /* 7. build sales rows ----------------------------------------- */
+    const salesRows = [...agg.entries()].map(([id,r]) => `
       <tr>
         <td>${id}</td>
         <td>${r.name}</td>
@@ -641,14 +755,7 @@ async function generateSalesReport () {
         <td>${workerName}</td>
       </tr>`).join("");
 
-    /* 6. build expense rows & total */
-    let expenseTotal = 0;
-    const expRows = expSnap.docs.map(d=>{
-      expenseTotal += d.data().amount||0;
-      return `<tr><td>${d.data().note}</td><td>${(d.data().amount)}</td></tr>`;
-    }).join("");
-
-    /* 7. inject final report HTML */
+    /* 8. inject HTML --------------------------------------------- */
     document.getElementById("salesReportArea").innerHTML = `
       <div class="d-flex justify-content-end">
         <button class="btn btn-outline-primary btn-sm" onclick="printDiv('printReport')">
@@ -660,24 +767,28 @@ async function generateSalesReport () {
         <div class="text-center mb-2">
           <img src="/img/logoShareDisplay.jpeg" style="height:90px" alt="logo"><br>
           <h5>${branchName}</h5>
-          <small>Sales & Cash Report (${fromStr} → ${toStr})</small>
+          <small>Sales & Cash Report (${start.toLocaleString()} → ${end.toLocaleString()})</small>
         </div>
 
         <table class="table table-sm table-bordered">
           <thead class="table-light">
             <tr>
               <th>Code</th><th>Product</th><th>Qty</th>
-              <th>Cash Sales (USh)</th><th>Credit Sales (USh)</th><th>Recorded by</th>
+              <th>Cash Sales(USh)</th><th>Credit Sales(USh)</th><th>Recorded by</th>
             </tr>
           </thead>
           <tbody>
             ${salesRows || `<tr><td colspan="6" class="text-center">No sales</td></tr>`}
           </tbody>
           <tfoot class="fw-bold">
-            <tr><td colspan="3" class="text-end">Total Cash</td>
-                <td class="text-end">${money(totalCash)}</td><td colspan="2"></td></tr>
-            <tr><td colspan="3" class="text-end">Total Credit</td>
-                <td class="text-end">${money(totalCredit)}</td><td colspan="2"></td></tr>
+            <tr>
+              <td colspan="3" class="text-end">Total Cash</td>
+              <td class="text-end">${money(totalCash)}</td><td colspan="2"></td>
+            </tr>
+            <tr>
+              <td colspan="3" class="text-end">Total Credit (outstanding)</td>
+              <td class="text-end">${money(totalCredit)}</td><td colspan="2"></td>
+            </tr>
           </tfoot>
         </table>
 
@@ -687,10 +798,12 @@ async function generateSalesReport () {
           <tbody>
             ${expRows || `<tr><td colspan="2" class="text-center">No expenses</td></tr>`}
           </tbody>
-          <tfoot class="fw-bold"><tr><td class="text-end">Total</td><td>${money(expenseTotal)}</td></tr></tfoot>
+          <tfoot class="fw-bold">
+            <tr><td class="text-end">Total</td><td class="">${money(expenseTotal)}</td></tr>
+          </tfoot>
         </table>
 
-        <p class="text-end"><em>Net Cash (received):</em> ${money(totalCash - expenseTotal)}</p>
+        <p class="text-end"><em>Net Cash (received)</em> ${money(totalCash - expenseTotal)}</p>
         <p class="text-end"><em>Prepared by:</em> ${workerName}</p>
       </div>
     `;
@@ -703,6 +816,7 @@ async function generateSalesReport () {
     btn.disabled = false;
   }
 }
+
 
 
 /* =================================================================
