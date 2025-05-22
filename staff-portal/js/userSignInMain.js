@@ -1,101 +1,146 @@
-import { db, doc, getDoc, updateDoc, serverTimestamp } from "./firebase-config.js";
-import { getAuth, signInWithEmailAndPassword } from "./firebase-config.js";
+/* ========================================================================
+   userSignInMain.js  –  interactive sign-in + first-time session cache
+   ------------------------------------------------------------------------
+   Responsibilities
+   • Authenticate credentials with Firebase Auth
+   • Fetch the worker document
+   • Guard against disabled / missing accounts
+   • Cache *all* session data exactly once (no duplicates)
+   • Stamp lastLoginAt
+   • Route user to the correct dashboard
+   ====================================================================== */
 
-const auth = getAuth();
+import {
+  db,
+  doc,
+  getDoc,
+  updateDoc,
+  serverTimestamp,
+  // auth helpers
+  getAuth,
+  signInWithEmailAndPassword,
+} from "./firebase-config.js";
 
-const loginForm = document.getElementById("loginForm");
-const emailField = document.getElementById("emailInp");
-const passwordField = document.getElementById("passwordInp");
-const loginButton = document.getElementById("loginBtn");
+const auth           = getAuth();
+const loginForm      = document.getElementById("loginForm");
+const emailField     = document.getElementById("emailInp");
+const passwordField  = document.getElementById("passwordInp");
+const loginButton    = document.getElementById("loginBtn");
 const togglePassword = document.getElementById("togglePassword");
 
-// Handle form submission
+/* ------------------------------------------------------------------
+   UTILITIES
+-------------------------------------------------------------------*/
+
+/** Show a dismissible Bootstrap toast (danger by default). */
+function showToast(message, type = "danger") {
+  const toast = document.createElement("div");
+  toast.className =
+    `toast align-items-center text-bg-${type} border-0 position-fixed 
+     top-0 end-0 m-3`;
+  toast.role       = "alert";
+  toast.ariaLive   = "assertive";
+  toast.ariaAtomic = "true";
+  toast.innerHTML  = `
+    <div class="d-flex">
+      <div class="toast-body">${message}</div>
+      <button type="button" 
+              class="btn-close btn-close-white me-2 m-auto" 
+              data-bs-dismiss="toast" aria-label="Close"></button>
+    </div>`;
+  document.body.appendChild(toast);
+  new bootstrap.Toast(toast).show();
+  toast.addEventListener("hidden.bs.toast", () => toast.remove());
+}
+
+/** Disable the login button and show spinner text. */
+function blockLoginUI(state) {
+  loginButton.disabled = state;
+  loginButton.innerHTML = state
+    ? `<span class="spinner-border spinner-border-sm me-2"
+              role="status" aria-hidden="true"></span>Signing in…`
+    : "Login";
+}
+
+/** Cache everything the rest of the app needs – once per login. */
+function cacheSession(worker, user) {
+  sessionStorage.setItem("user-information", JSON.stringify(worker));
+  sessionStorage.setItem(
+    "user-credentials",
+    JSON.stringify({ uid: user.uid, email: user.email })
+  );
+  sessionStorage.setItem("branchId",   worker.branchId   || "");
+  sessionStorage.setItem("branchName", worker.branchName || "");
+}
+
+/* ------------------------------------------------------------------
+   EVENT HANDLERS
+-------------------------------------------------------------------*/
+
 loginForm.addEventListener("submit", async (e) => {
   e.preventDefault();
 
-  const email = emailField.value.trim();
+  const email    = emailField.value.trim();
   const password = passwordField.value;
 
-  // Basic validation
+  // 💡 trivial form guard
   if (!email || !password) {
     showToast("⚠️ Please fill in both email and password.");
     return;
   }
 
-  loginButton.disabled = true;
-  loginButton.innerHTML = `
-    <span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
-    Signing in...
-  `;
+  blockLoginUI(true);
 
   try {
+    /* 1️⃣  Firebase Auth ------------------------------------------------ */
     const { user } = await signInWithEmailAndPassword(auth, email, password);
-    const userDoc = await getDoc(doc(db, "workers", user.uid));
 
-    if (!userDoc.exists()) throw new Error("No worker record found.");
-    
-    const worker = userDoc.data();
-    if (worker.disabled) throw new Error("Account suspended. Contact admin.");
+    /* 2️⃣  Firestore worker doc --------------------------------------- */
+    const snap = await getDoc(doc(db, "workers", user.uid));
+    if (!snap.exists()) throw new Error("No worker record found.");
 
-    // Save session info
-    sessionStorage.setItem("user-information", JSON.stringify(worker));
-    sessionStorage.setItem("user-credentials", JSON.stringify({ email: user.email, uid: user.uid }));
+    const worker = snap.data();
+    if (worker.disabled) throw new Error("Account suspended.");
 
-    // Redirect based on role
-    const routes = {
+    /* 3️⃣  Cache session once ----------------------------------------- */
+    cacheSession(worker, user);
+
+    /* 4️⃣  Audit: lastLoginAt ----------------------------------------- */
+    updateDoc(doc(db, "workers", user.uid), { lastLoginAt: serverTimestamp() })
+      .catch((err) => console.warn("lastLoginAt update failed:", err));
+
+    /* 5️⃣  Role-based redirect ---------------------------------------- */
+    const ROUTES = {
       "Top Level Manager": "/staff-portal/superadmin/",
-      "Branch Manager": "/staff-portal/branch-manager/",
-      "Nutritionist": "/staff-portal/nutritionist/",
-      "Front Desk": "/staff-portal/front-desk/"
+      "Branch Manager":    "/staff-portal/branch-manager/",
+      "Nutritionist":      "/staff-portal/nutritionist/",
+      "Front Desk":        "/staff-portal/front-desk/",
     };
+    const path = ROUTES[worker.accessLevel];
+    if (!path) throw new Error("Access level not recognized.");
 
-    const redirectPath = routes[worker.accessLevel];
-    if (!redirectPath) throw new Error("Access level not recognized.");
+    localStorage.setItem(
+      "postLoginToast",
+      JSON.stringify({ message: "✅ Login successful!", type: "success" })
+    );
 
-    // ✅ Update last login timestamp
-    await updateDoc(doc(db, "workers", user.uid), {
-      lastLoginAt: serverTimestamp()
-    });
-
-    // Optional post-login toast
-    localStorage.setItem("postLoginToast", JSON.stringify({
-      message: "✅ Login successful!",
-      type: "success"
-    }));
-
-    window.location.href = redirectPath;
+    window.location.href = path; // 🎉
 
   } catch (err) {
-    showToast(err.message.includes("suspend") ? "⛔ Account suspended. Contact admin." : "❌ Invalid credentials.");
+    // Tight messaging for UX
+    const msg = err.message.includes("suspend")
+      ? "⛔ Account suspended. Contact admin."
+      : "❌ Invalid credentials.";
+    showToast(msg);
   } finally {
-    loginButton.disabled = false;
-    loginButton.innerHTML = "Login";
+    blockLoginUI(false);
   }
 });
 
-// Toggle password visibility
+/* Toggle password eye / slash */
 togglePassword.addEventListener("click", () => {
-  const isPassword = passwordField.type === "password";
-  passwordField.type = isPassword ? "text" : "password";
-  togglePassword.classList.toggle("fa-eye", !isPassword);
-  togglePassword.classList.toggle("fa-eye-slash", isPassword);
+  const isPwd = passwordField.type === "password";
+  passwordField.type = isPwd ? "text" : "password";
+  togglePassword.classList.toggle("fa-eye",      !isPwd);
+  togglePassword.classList.toggle("fa-eye-slash", isPwd);
 });
-
-// Simple toast feedback
-function showToast(message) {
-  const toast = document.createElement("div");
-  toast.className = "toast align-items-center text-bg-danger border-0 position-fixed top-0 end-0 m-3";
-  toast.role = "alert";
-  toast.ariaLive = "assertive";
-  toast.ariaAtomic = "true";
-  toast.innerHTML = `
-    <div class="d-flex">
-      <div class="toast-body">${message}</div>
-      <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast" aria-label="Close"></button>
-    </div>
-  `;
-  document.body.appendChild(toast);
-  const bsToast = new bootstrap.Toast(toast);
-  bsToast.show();
-  toast.addEventListener("hidden.bs.toast", () => toast.remove());
-}
