@@ -2,7 +2,7 @@
    Branch dashboard counters & modals – REAL‑TIME, deposit‑aware (rev 3.1)
    ================================================================== */
 import {
-  db,
+  db, getDoc,
   collection, collectionGroup,
   query, where, orderBy, limit,
   onSnapshot, Timestamp
@@ -11,7 +11,7 @@ import {
 /* ------------------------------------------------------------
    1️⃣  Ensure the session is ready so branchId is present
 ------------------------------------------------------------ */
-await window.sessionReady;
+// await window.sessionReady;
 
 const worker      = JSON.parse(sessionStorage.getItem("user-information") || "{}");
 const branchId    = sessionStorage.getItem("branchId") || worker.branchId;
@@ -63,94 +63,54 @@ onSnapshot(collection(db, `companyBranches/${branchId}/branchStock`), snap => {
 });
 
 /* ------------------------------------------------------------
-   6️⃣  SALES & CREDIT (deposit‑aware)
------------------------------------------------------------- */
-const cashDailySales    = new Map();   // day → cash sales amount
-const cashDailyDeposits = new Map();   // day → deposit amounts
-const creditDaily       = new Map();   // day → outstanding balances
-const totalDaily        = new Map();   // day → grandTotal of all sales
-let   cashDepositsSum   = 0;           // quick running sum for headline
+   6️⃣  SALES & CREDIT ─ Single listener, deposit-aware, no duplicates
+   ------------------------------------------------------------ */
 
-/* — a) CASH sales (paymentType === "cash") — */
+/* replace the four old Maps with these three (names are new → no clashes) */
+const mapCash   = new Map();    // yyyy-mm-dd → paidAmount  (cash sales + deposits)
+const mapCredit = new Map();    // yyyy-mm-dd → balanceDue  (still outstanding)
+const mapTotal  = new Map();    // yyyy-mm-dd → grandTotal  (ticket value)
+
+/* helper to reset all three in one go */
+function clearSalesMaps () { mapCash.clear(); mapCredit.clear(); mapTotal.clear(); }
+
+/* live snapshot for *all* sales of this branch in the current month */
 onSnapshot(
   query(
     collection(db, `companyBranches/${branchId}/branchSales`),
-    where("createdAt", ">=", tsMonthStart),
-    where("paymentType", "==", "cash")
+    where("createdAt", ">=", tsMonthStart)
   ),
   snap => {
-    cashDailySales.clear();
-    snap.forEach(doc => {
-      const d    = doc.data();
-      const day  = isoDay(d.createdAt);
-      const amt  = +d.grandTotal || 0;
-      cashDailySales.set(day, (cashDailySales.get(day) || 0) + amt);
-      totalDaily.set(day, (totalDaily.get(day) || 0) + amt);
-    });
-    updateHeadline();
-  }
-);
-
-/* — b) CREDIT / PARTIAL sales (paymentType === "credit") — */
-onSnapshot(
-  query(
-    collection(db, `companyBranches/${branchId}/branchSales`),
-    where("createdAt", ">=", tsMonthStart),
-    where("paymentType", "==", "credit")
-  ),
-  snap => {
-    creditDaily.clear();
-    snap.forEach(doc => {
-      const d    = doc.data();
-      const day  = isoDay(d.createdAt);
-      const bal  = +d.balanceDue || 0;
-      const gTot = +d.grandTotal || 0;
-      if (bal) creditDaily.set(day, (creditDaily.get(day) || 0) + bal);
-      totalDaily.set(day, (totalDaily.get(day) || 0) + gTot);
-    });
-    updateHeadline();
-  }
-);
-
-/* — c) CREDIT-DEPOSIT payments (ONLY this branch) — */
-onSnapshot(
-  query(
-    collectionGroup(db, "payments"),
-    where("method", "==", "credit-deposit"),
-    where("paidAt", ">=", tsMonthStart)
-  ),
-  snap => {
-    cashDailyDeposits.clear();
-    cashDepositsSum = 0;
+    clearSalesMaps();
 
     snap.forEach(doc => {
-      /* branchId is the second segment in the doc’s path: companyBranches/{branchId}/branchSales/{saleId}/payments/{payId}*/
-      const pathSeg = doc.ref.path.split('/');
-      const payBranch = pathSeg[1];          // <-- this is branchId in the path
-      if (payBranch !== branchId) return;    // 🚫 skip other branches
+      const sale = doc.data();
+      const day  = isoDay(sale.createdAt);
 
-      const p   = doc.data();
-      const day = isoDay(p.paidAt);
-      const amt = +p.amount || 0;
+      const paid   = +sale.paidAmount  || 0;     // includes every deposit so far
+      const credit = +sale.balanceDue  || 0;     // 0 if cleared / cash sale
+      const total  = +sale.grandTotal  || 0;
 
-      cashDailyDeposits.set(day, (cashDailyDeposits.get(day) || 0) + amt);
-      cashDepositsSum += amt;
+      mapCash  .set(day, (mapCash  .get(day)||0) + paid);
+      mapCredit.set(day, (mapCredit.get(day)||0) + credit);
+      mapTotal .set(day, (mapTotal .get(day)||0) + total);
     });
 
     updateHeadline();
   }
 );
 
-
+/* ---- headline card updater ------------------------------------ */
 function updateHeadline () {
-  const cashSales  = sumMap(cashDailySales);
-  const cashIn     = cashSales + cashDepositsSum;
-  const creditDue  = sumMap(creditDaily);
+  const cashIn    = sumMap(mapCash);      // cash-sales + deposits dated on sale day
+  const creditDue = sumMap(mapCredit);    // still outstanding
+  const monthTot  = sumMap(mapTotal);     // ticket value (cash+credit)
 
-  elSales.textContent = (cashIn + creditDue).toLocaleString();
-  if (elCashIn)    elCashIn.textContent    = cashIn.toLocaleString();
+  elSales.textContent      = monthTot.toLocaleString();
+  if (elCashIn)    elCashIn.textContent    = cashIn   .toLocaleString();
   if (elCreditDue) elCreditDue.textContent = creditDue.toLocaleString();
 }
+
 
 /* ------------------------------------------------------------
    7️⃣  EXPENSES (month‑to‑date)
@@ -214,9 +174,12 @@ onSnapshot(
     snap.docChanges().forEach(ch => {
       if (ch.type === "added") {
         const d = ch.doc.data();
+        const isCredit = (d.paymentType || "").toLowerCase() === "credit";
+        const saleType = isCredit ? "credit" : "cash";
+
         pushFeed(
           "fas fa-receipt text-success",
-          `Processed sale – UGX ${(+d.grandTotal).toLocaleString()}`,
+          `Processed ${saleType} sale – UGX ${(+d.grandTotal).toLocaleString()}`,
           d.createdAt?.toDate().getTime() || Date.now()
         );
       }
@@ -256,25 +219,38 @@ onSnapshot(
     limit(10)
   ),
   snap => {
-    snap.docChanges().forEach(ch => {
-      if (ch.type === "added") {
-        const p = ch.doc.data();
-        pushFeed(
-          "fas fa-hand-holding-usd text-primary",
-          `Collected credit deposit – UGX ${(+p.amount).toLocaleString()}`,
-          p.paidAt?.toDate().getTime() || Date.now()
-        );
+    snap.docChanges().forEach(async ch => {
+      if (ch.type !== "added") return;
+
+      const p = ch.doc.data();
+      const saleRef = ch.doc.ref.parent.parent; // go up to the sale document
+
+      let customer = "Unknown Customer";
+
+      try {
+        const saleDoc = await getDoc(saleRef);
+        if (saleDoc.exists()) {
+          customer = saleDoc.data().customer || customer;
+        }
+      } catch (err) {
+        console.error("Failed to get sale for deposit:", err);
       }
+
+      pushFeed(
+        "fas fa-hand-holding-usd text-primary",
+        `Collected credit deposit – UGX ${(+p.amount).toLocaleString()} from ${customer}`,
+        p.paidAt?.toDate().getTime() || Date.now()
+      );
     });
   }
 );
+
 
 /* ------------------------------------------------------------
    9️⃣  “More details” MODALS
 ------------------------------------------------------------ */
 
 /* Stock modal */
-
 document.getElementById("branchStockMore")?.addEventListener("click", () => {
   const body = document.getElementById("branchStockBody");
   body.innerHTML = "";
@@ -287,26 +263,25 @@ document.getElementById("branchStockMore")?.addEventListener("click", () => {
   bootstrap.Modal.getOrCreateInstance("#branchStockModal").show();
 });
 
-/* Sales modal (cash‑in, credit‑due, total) */
-
+/* Sales modal (cash-in, credit-due, total – per day) */
 document.getElementById("salesMore")?.addEventListener("click", () => {
   const body = document.getElementById("salesBody");
   body.innerHTML = "";
 
-  // Gather all unique days tracked across the three daily maps
+  /* collect every yyyy-mm-dd key that appears in any of the three maps */
   const days = new Set([
-    ...cashDailySales.keys(),
-    ...cashDailyDeposits.keys(),
-    ...creditDaily.keys(),
-    ...totalDaily.keys()
+    ...mapCash.keys(),
+    ...mapCredit.keys(),
+    ...mapTotal.keys()
   ]);
 
   [...days]
-    .sort((a, b) => new Date(b) - new Date(a))
+    .sort((a, b) => new Date(b) - new Date(a))        // newest first
     .forEach(day => {
-      const cash   = (cashDailySales.get(day) || 0) + (cashDailyDeposits.get(day) || 0);
-      const credit = creditDaily.get(day) || 0;
-      const total  = totalDaily.get(day) || 0;
+      const cash   = mapCash  .get(day) || 0;          // paidAmount (cash + deposits)
+      const credit = mapCredit.get(day) || 0;          // still outstanding
+      const total  = mapTotal .get(day) || 0;          // ticket value
+
       body.insertAdjacentHTML(
         "beforeend",
         `<tr>
@@ -322,7 +297,6 @@ document.getElementById("salesMore")?.addEventListener("click", () => {
 });
 
 /* Monthly expenses modal */
-
 document.getElementById("expensesMore")?.addEventListener("click", () => {
   const body = document.getElementById("expensesBody");
   body.innerHTML = "";

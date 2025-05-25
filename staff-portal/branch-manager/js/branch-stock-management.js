@@ -2,7 +2,7 @@
    Branch Stock Management – robust & session-safe
    ========================================================== */
 import {
-  db, collection, collectionGroup, doc, getDoc, getDocs,
+  db, collection, doc, getDoc, getDocs,
   runTransaction, onSnapshot, query, where, orderBy, limit,
   serverTimestamp
 } from "../../js/firebase-config.js";
@@ -42,7 +42,7 @@ const txt        = document.getElementById("moveText");
 const historyBody= document.getElementById("historyTableBody");
 
 const reportBtn  = document.getElementById("generateReport");
-const reportArea = document.getElementById("reportArea");
+const stockReportArea = document.getElementById("stockReportArea");
 
 /* ----------------------------------------------------------
    3️⃣  Local caches
@@ -146,8 +146,8 @@ form.addEventListener("submit", async e => {
 
   busy(true);
   const now = Date.now();
-  const logIdOut = `BSL_${now}`;
-  const logIdIn  = `BSL_${now}_IN`;
+  const logIdOut = `BSL${now}_OUT`;
+  const logIdIn  = `BSL${now}_IN`;
 
   // Pre-declare all doc refs BEFORE transaction starts
   const srcRef   = doc(db, "companyBranches", branchId, "branchStock", productId);
@@ -240,7 +240,7 @@ onSnapshot(
   });
 
 /* ----------------------------------------------------------
-   8️⃣  Stock-Movement report  (unchanged logic, safer)
+   8️⃣  Stock-Movement report  (safer)
 ---------------------------------------------------------- */
 reportBtn.addEventListener("click", generateReport);
 
@@ -252,7 +252,7 @@ async function generateReport(){
   const toDate  =toInp.value ? new Date(toInp.value+"T23:59:59") : new Date();
 
   reportBtn.disabled=true;
-  reportArea.innerHTML=`<div class="text-center my-3">
+  stockReportArea.innerHTML=`<div class="text-center my-3">
       <div class="spinner-border text-primary"></div><div class="mt-2">Generating…</div></div>`;
 
   try{
@@ -276,9 +276,24 @@ async function generateReport(){
     const rows=[];
     for(const [pid, stat] of agg){
       /* opening=closing+out+sales-in  (snapshot at end) */
-      const stockSnap = await getDoc(doc(db,"companyBranches",branchId,"branchStock",pid));
-      const closing   = stockSnap.exists()?stockSnap.data().quantity:0;
-      const opening   = closing+stat.out+stat.sales-stat.in;
+      const stockSnap = await getDoc(doc(db, "companyBranches", branchId, "branchStock", pid));
+      let closing = stockSnap.exists() ? +stockSnap.data().quantity : 0;
+      /* “Undo” movements that happened AFTER our report’s end date */
+      const logsAfterEnd = await getDocs(query(
+        collection(db, "companyBranches", branchId, "branchStockLogs"),
+        where("productId", "==", pid),
+        where("createdAt", ">", toDate)             // strictly after the period
+      ));
+      logsAfterEnd.forEach(l => {
+        const d = l.data();
+        switch (d.type) {
+          case "sale":         closing += d.quantity; break;        // reverse the decrease
+          case "transferOut":  closing += d.quantity; break;
+          case "transferIn":   closing -= d.quantity; break;        // reverse the increase
+        }
+      });
+      /* now closing is the stock **at the end of the period** */
+      const opening = closing + stat.out + stat.sales - stat.in;
       const meta=productCache.get(pid)||{itemCode:pid,itemParticulars:""};
       rows.push(`<tr>
         <td>${meta.itemCode}</td><td>${meta.itemParticulars}</td>
@@ -286,7 +301,7 @@ async function generateReport(){
         <td>${stat.in}</td><td>${closing}</td></tr>`);
     }
 
-    reportArea.innerHTML = rows.length
+    stockReportArea.innerHTML = rows.length
       ? `<div class="d-flex justify-content-end">
            <button class="btn btn-outline-primary btn-sm" onclick="printDiv('reportContent')">
              <i class="bi bi-printer me-1"></i> Print Report
@@ -297,12 +312,14 @@ async function generateReport(){
              <h5>${branchName}</h5>
              <small>Stock Movement Report (${fromDate.toLocaleString()} ➜ ${toDate.toLocaleString()})</small>
            </div>
-           <table class="table table-sm table-bordered">
-             <thead class="table-light"><tr>
-               <th>Item Code</th><th>Item Particulars</th><th>Opening Stock</th>
-               <th>Sales</th><th>Transfer Out</th><th>Transfer In</th><th>Closing Stock</th>
-             </tr></thead><tbody>${rows.join("")}</tbody>
-           </table>
+           <div class="table-responsive">
+            <table class="table table-sm table-bordered">
+              <thead class="table-light"><tr>
+                <th>Item Code</th><th>Item Particulars</th><th>Opening Stock</th>
+                <th>Sales</th><th>Transfer Out</th><th>Transfer In</th><th>Closing Stock</th>
+              </tr></thead><tbody>${rows.join("")}</tbody>
+            </table>
+           </div>
            <p class="text-end"><em>Prepared by:</em> ${performedBy}</p>
          </div>`
       : `<div class="alert alert-info">No movement recorded in this period.</div>`;
@@ -314,6 +331,7 @@ async function generateReport(){
     reportBtn.disabled=false;
   }
 }
+
 
 /* ----------------------------------------------------------
    9️⃣  Simple print helper – same-tab dialog + white page

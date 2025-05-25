@@ -106,7 +106,7 @@ loginForm.addEventListener("submit", async (e) => {
     cacheSession(worker, user);
 
     /* 4️⃣  Audit: lastLoginAt ----------------------------------------- */
-    updateDoc(doc(db, "workers", user.uid), { lastLoginAt: serverTimestamp() })
+    await updateDoc(doc(db, "workers", user.uid), { lastLoginAt: serverTimestamp() })
       .catch((err) => console.warn("lastLoginAt update failed:", err));
 
     /* 5️⃣  Role-based redirect ---------------------------------------- */
@@ -128,9 +128,16 @@ loginForm.addEventListener("submit", async (e) => {
 
   } catch (err) {
     // Tight messaging for UX
-    const msg = err.message.includes("suspend")
-      ? "⛔ Account suspended. Contact admin."
-      : "❌ Invalid credentials.";
+    let msg = "❌ Invalid email or password!";
+    if (err.code === "auth/user-disabled" || err.message.includes("suspend")) {
+      msg = "⛔ Account suspended. Contact admin!";
+    } else if (err.code === "auth/network-request-failed") {
+      msg = "🌐 Network error. Check your connection!";
+    } else if (err.code === "auth/too-many-requests") {
+      msg = "🚫 Too many attempts. Try again later!";
+    } else if (err.code === "auth/internal-error") {
+      msg = "⚠️ Internal error. Please try again!";
+    }
     showToast(msg);
   } finally {
     blockLoginUI(false);

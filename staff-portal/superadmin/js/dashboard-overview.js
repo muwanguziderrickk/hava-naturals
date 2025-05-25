@@ -3,7 +3,7 @@
    (v3 – fixed activity feed, ensured deposit-aware logic)
 =========================================================== */
 import {
-  db, collection, collectionGroup, doc,
+  db, collection, collectionGroup,
   onSnapshot, query, where, orderBy, limit,
   Timestamp
 } from '../../js/firebase-config.js';
@@ -193,7 +193,7 @@ onSnapshot(
     if (c.type === 'added') {
       const d = c.doc.data();
       pushActivity('bi-box-seam',
-        `New product: ${d.itemParticulars || c.doc.id}`,
+        `Added new product: ${d.itemParticulars || c.doc.id}`,
         d.createdAt?.toMillis?.() || Date.now());
     }
   })
@@ -216,13 +216,13 @@ onSnapshot(
 /* Company-level stock batch */
 onSnapshot(
   query(collection(db, 'companyStock'),
-        orderBy('createdAt', 'desc'), limit(2)),
+        orderBy('addedAt', 'desc'), limit(2)),
   s => s.docChanges().forEach(c => {
     if (c.type === 'added') {
       const d = c.doc.data();
       pushActivity('bi-journal-plus',
-        `Stock batch ${d.batchCode || '(no code)'}`,
-        d.createdAt?.toMillis?.() || Date.now());
+        `Added stock batch ${d.batchCode || '(no code)'}`,
+        d.addedAt?.toMillis?.() || Date.now());
     }
   })
 );

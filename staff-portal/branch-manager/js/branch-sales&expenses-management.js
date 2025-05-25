@@ -2,7 +2,7 @@
    sales-module.js   –   CASH • CREDIT • PARTIAL PAYMENTS (v2)
    =================================================================== */
 import {
-  db, collection, collectionGroup, doc, getDoc, getDocs, setDoc,
+  db, collection, doc, getDoc, getDocs, setDoc,
   runTransaction, onSnapshot, serverTimestamp,
   query, where, orderBy
 } from "../../js/firebase-config.js";
@@ -160,7 +160,7 @@ async function saveSale(e){
   /* busy UI ------------------------------------------------------ */
   saleBtn.disabled=true; saleSpin.classList.remove("d-none"); saleTxt.textContent="Saving…";
 
-  const saleId  = `SALE_${Date.now()}_${Math.floor(Math.random()*1000)}`;
+  const saleId  = `S${Date.now()}_${Math.floor(Math.random()*1000)}`;
   const customer= document.getElementById("custName").value.trim()||"Walk-in";
 
   try{
@@ -178,7 +178,7 @@ async function saveSale(e){
         tx.set(doc(db,"companyBranches",branchId,"branchStockLogs",`${saleId}_${i}`),
           {type:"sale",productId:it.productId,quantity:it.qty,
            itemParticulars:productCache[it.productId]?.itemParticulars||"",
-           performedBy:workerName,createdAt:serverTimestamp()});
+           performedBy:workerName, note:customer, createdAt:serverTimestamp()});
       });
 
       /* parent sale ---------------------------------------------- */
@@ -280,7 +280,7 @@ function renderReceiptHTML({
   <table class="w-100 small">
     <tr><td>Sub-Total</td><td class="text-end">${money(sub)}</td></tr>
     ${ oDiscPct ? `<tr><td>Overall Disc ${oDiscPct}%</td><td class="text-end">-${money(sub-grand)}</td></tr>` : "" }
-    <tr><td><strong>Grand</strong></td><td class="text-end"><strong>${money(grand)}</strong></td></tr>
+    <tr><td><strong>Grand Total</strong></td><td class="text-end"><strong>${money(grand)}</strong></td></tr>
     ${extra}
   </table><hr>
   <em><p class="text-center small m-0">Due to the concentration of minerals, <br> We advise not to take straight 
@@ -297,7 +297,7 @@ function buildReceipt(
   const html = renderReceiptHTML({
     saleId  : id,
     customer,
-    payLabel: balance ? "Credit (partial)" : payType,
+    payLabel: balance ? "Credit" : payType,
     items,
     oDiscPct,
     paid    : paidNow,
@@ -365,7 +365,7 @@ document.getElementById("printReceiptModal").onclick = () => printDiv("receiptCo
       expTxt.textContent = "Saving…";
 
       try {
-        const expId = `EXP_${Date.now()}`;
+        const expId = `EXP${Date.now()}_${Math.floor(Math.random()*1000)}`;
         await setDoc(
           doc(db, "companyBranches", branchId, "branchExpenses", expId),
           {
@@ -409,7 +409,7 @@ onSnapshot(
           <td class="text-end">
             <button class="btn btn-sm btn-outline-primary pay-btn"
                     data-id="${d.id}" data-bal="${d.data().balanceDue}">
-              Add Payment
+              <i class="fas fa-plus-circle"></i> Offset
             </button>
           </td>
         </tr>`);
@@ -472,7 +472,7 @@ payForm.addEventListener("submit",async e=>{
       const html = renderReceiptHTML({
         saleId,
         customer   : s.customer,
-        payLabel   : s.balanceDue === 0 ? "Cash" : "Credit (partial)",
+        payLabel   : s.balanceDue === 0 ? "Cash" : "Credit",
         items      : s.items,
         oDiscPct   : s.overallDiscountPct,
         paidAmount : s.paidAmount,
@@ -640,7 +640,7 @@ window.printHtmlReceipt = (html) => {
 
 
 /* =================================================================
-   5️⃣  SALES REPORT – adds deposits as daily cash (sales + expenses + credit-deposits)
+   5️⃣  SALES REPORT  –  deposit-aware, date-range accurate
    ================================================================= */
 document.getElementById("genSalesReport")
         .addEventListener("click", generateSalesReport);
@@ -655,17 +655,26 @@ async function generateSalesReport () {
   btn.disabled = true;
 
   try {
-    /* 1. date range ------------------------------------------------ */
-    const todayISO = new Date().toISOString().slice(0,10);
-    const fromStr  = document.getElementById("repFrom").value || todayISO;
-    const toStr    = document.getElementById("repTo").value   || todayISO;
+    /* ── 1. Date range (inclusive) ─────────────────────── */
+    const fromElm = document.getElementById("repFrom");
+    const toElm   = document.getElementById("repTo");
 
-    const start = new Date(fromStr + "T00:00:00");
-    const end   = (fromStr === toStr) ? new Date()            // “today → now”
-                                      : new Date(toStr + "T23:59:59");
+    const today   = new Date();                                // now
+    const start   = fromElm.valueAsDate
+                      ? new Date(fromElm.valueAsDate.setHours(0,0,0,0))
+                      : new Date(today.toISOString().slice(0,10) + "T00:00:00");
 
-    /* 2. fetch data in parallel ----------------------------------- */
-    const [salesSnap, expSnap, paySnap] = await Promise.all([
+    const end     = toElm.valueAsDate
+                      ? new Date(toElm.valueAsDate.setHours(23,59,59,999))
+                      : new Date(today);                       // “today → now”
+
+    if (start > end) {
+      await Swal.fire("Invalid range","‘From’ date is after ‘To’ date","warning");
+      return;
+    }
+
+    /* ── 2. Parallel fetches ───────────────────────────── */
+    const [salesSnap, expSnap] = await Promise.all([
       getDocs(query(
         collection(db,"companyBranches",branchId,"branchSales"),
         where("createdAt",">=",start), where("createdAt","<=",end)
@@ -673,91 +682,70 @@ async function generateSalesReport () {
       getDocs(query(
         collection(db,"companyBranches",branchId,"branchExpenses"),
         where("createdAt",">=",start), where("createdAt","<=",end)
-      )),
-      getDocs(query(
-        collectionGroup(db,"payments"),
-        where("method","==","credit-deposit"),
-        where("paidAt",">=",start), where("paidAt","<=",end)
       ))
     ]);
 
-    /* 3. build a quick lookup of sales already inside the range --- */
-    const inRangeSaleIds = new Set( salesSnap.docs.map(d => d.id) );
+    /* We do *not* query the payments sub-collection; `paidAmount`
+       in each sale already contains every deposit up to “now”.
+       That means deposits are always booked on the sale’s date,
+       which is exactly the behaviour requested.                   */
 
-    /* 4. aggregate sales per product ------------------------------ */
-    const agg = new Map();         // productId → { name, qty, cash, credit }
-    let  totalCash = 0, totalCredit = 0;
+    /* ── 3. Aggregate sales per product ─────────────────── */
+    const agg = new Map();           // productId → {name, qty, cash, credit}
+    let totalCash   = 0;
+    let totalCredit = 0;
 
-    salesSnap.forEach(s => {
-      const sale        = s.data();
-      const paidAmount  = sale.paidAmount  || 0;   // cash we have *right now*
-      const balanceDue  = sale.balanceDue  || 0;   // outstanding credit
+    salesSnap.forEach(doc => {
+      const sale       = doc.data();
+      const paid       = +sale.paidAmount  || 0;
+      const balance    = +sale.balanceDue  || 0;      // 0 if fully cleared
 
-      totalCash   += paidAmount;
-      totalCredit += balanceDue;
+      totalCash   += paid;
+      totalCredit += balance;
 
-      /* proportionally spread discounts across items */
-      const netWithoutOvr = sale.items
-        .reduce((sum,i)=>sum + i.unit*i.qty*(1-i.disc/100), 0);
-      const scale = netWithoutOvr ? sale.grandTotal / netWithoutOvr : 1;
+      /* spread overall discount across items so per-item numbers add up */
+      const netNoOvr = sale.items
+        .reduce((s,i)=>s+i.unit*i.qty*(1-i.disc/100),0);
+      const scale    = netNoOvr ? sale.grandTotal / netNoOvr : 1;
 
-      sale.items.forEach(it => {
-        const net = it.unit * it.qty * (1 - it.disc/100) * scale;
-        if (!agg.has(it.productId)) {
-          agg.set(it.productId, {
-            name   : productCache[it.productId]?.itemParticulars || "",
-            qty    : 0,
-            cash   : 0,
-            credit : 0
-          });
-        }
-        const rec   = agg.get(it.productId);
-        const cashR = paidAmount  / sale.grandTotal;
-        const credR = balanceDue  / sale.grandTotal;
+      sale.items.forEach(it=>{
+        const net  = it.unit*it.qty*(1-it.disc/100)*scale;
+        const rec  = agg.get(it.productId) || {
+                       name  : productCache[it.productId]?.itemParticulars || "",
+                       qty   : 0, cash:0, credit:0
+                     };
+        const cashPart   = paid   / sale.grandTotal;   // 0-1 ratio
+        const creditPart = balance/ sale.grandTotal;   // 0-1 ratio
 
         rec.qty    += it.qty;
-        rec.cash   += net * cashR;
-        rec.credit += net * credR;
+        rec.cash   += net * cashPart;
+        rec.credit += net * creditPart;
+        agg.set(it.productId, rec);
       });
     });
 
-    /* 5. add CREDIT-DEPOSIT payments that belong to THIS branch
-          and whose parent sale is not already inside the range. */
-    let depositsTotal = 0;
-    paySnap.forEach(p => {
-      const pathSeg   = p.ref.path.split("/");   // ["companyBranches", "{branchId}", …]
-      const payBranch = pathSeg[1];              // branchId embedded in the path
-
-      if (payBranch !== branchId) return;        // 🚫 skip payments from other branches
-
-      const saleId = p.ref.parent.parent.id;     // parent sale document id
-      if (!inRangeSaleIds.has(saleId)) {
-        depositsTotal += p.data().amount || 0;
-      }
-    });
-    totalCash += depositsTotal;
-
-    /* 6. build expenses ------------------------------------------- */
+    /* ── 4. Aggregate expenses ─────────────────────────── */
     let expenseTotal = 0;
-    const expRows = expSnap.docs.map(d => {
-      expenseTotal += d.data().amount || 0;
-      return `<tr><td>${d.data().note}</td><td class="">${(d.data().amount)}</td></tr>`;
+    const expenseRows = expSnap.docs.map(d=>{
+      const amt = +d.data().amount || 0;
+      expenseTotal += amt;
+      return `<tr><td>${d.data().note}</td><td>${(amt)}</td></tr>`;
     }).join("");
 
-    /* 7. build sales rows ----------------------------------------- */
-    const salesRows = [...agg.entries()].map(([id,r]) => `
+    /* ── 5. Build sales rows ───────────────────────────── */
+    const salesRows = [...agg.entries()].map(([pid,r])=>`
       <tr>
-        <td>${id}</td>
+        <td>${pid}</td>
         <td>${r.name}</td>
         <td class="text-center">${r.qty}</td>
         <td class="text-end">${(r.cash)}</td>
-        <td class="text-end">${(r.credit)}</td>
+        <td class="">${(r.credit)}</td>
         <td>${workerName}</td>
       </tr>`).join("");
 
-    /* 8. inject HTML --------------------------------------------- */
+    /* ── 6. Inject report HTML ─────────────────────────── */
     document.getElementById("salesReportArea").innerHTML = `
-      <div class="d-flex justify-content-end">
+      <div class="d-flex justify-content-end mb-2">
         <button class="btn btn-outline-primary btn-sm" onclick="printDiv('printReport')">
           <i class="bi bi-printer me-1"></i> Print Report
         </button>
@@ -770,43 +758,48 @@ async function generateSalesReport () {
           <small>Sales & Cash Report (${start.toLocaleString()} → ${end.toLocaleString()})</small>
         </div>
 
-        <table class="table table-sm table-bordered">
-          <thead class="table-light">
-            <tr>
-              <th>Code</th><th>Product</th><th>Qty</th>
-              <th>Cash Sales(USh)</th><th>Credit Sales(USh)</th><th>Recorded by</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${salesRows || `<tr><td colspan="6" class="text-center">No sales</td></tr>`}
-          </tbody>
-          <tfoot class="fw-bold">
-            <tr>
-              <td colspan="3" class="text-end">Total Cash</td>
-              <td class="text-end">${money(totalCash)}</td><td colspan="2"></td>
-            </tr>
-            <tr>
-              <td colspan="3" class="text-end">Total Credit (outstanding)</td>
-              <td class="text-end">${money(totalCredit)}</td><td colspan="2"></td>
-            </tr>
-          </tfoot>
-        </table>
+        <div class="table-responsive">
+          <table class="table table-sm table-bordered">
+            <thead class="table-light">
+              <tr>
+                <th>Code</th><th>Product</th><th>Qty</th>
+                <th class="text-end">Cash Sales(USh)</th><th>Credit Sales(USh)</th><th>Processed By</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${salesRows || `<tr><td colspan="6" class="text-center">No sales</td></tr>`}
+            </tbody>
+            <tfoot class="fw-bold">
+              <tr>
+                <td colspan="3" class="text-end">Total Cash</td>
+                <td class="text-end">${money(totalCash)}</td><td colspan="2"></td>
+              </tr>
+              <tr>
+                <td colspan="3" class="text-end">Total Credit (outstanding)</td>
+                <td class="text-end">${money(totalCredit)}</td><td colspan="2"></td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
 
         <h6 class="mt-4">Expenses</h6>
-        <table class="table table-sm table-bordered">
-          <thead class="table-light"><tr><th>Details</th><th>Amount (USh)</th></tr></thead>
-          <tbody>
-            ${expRows || `<tr><td colspan="2" class="text-center">No expenses</td></tr>`}
-          </tbody>
-          <tfoot class="fw-bold">
-            <tr><td class="text-end">Total</td><td class="">${money(expenseTotal)}</td></tr>
-          </tfoot>
-        </table>
+        <div class="table-responsive">
+          <table class="table table-sm table-bordered">
+            <thead class="table-light">
+              <tr><th>Details</th><th>Amount (USh)</th></tr>
+            </thead>
+            <tbody>
+              ${expenseRows || `<tr><td colspan="2" class="text-center">No expenses</td></tr>`}
+            </tbody>
+            <tfoot class="fw-bold">
+              <tr><td class="text-end">Total</td><td>${money(expenseTotal)}</td></tr>
+            </tfoot>
+          </table>
+        </div>
 
         <p class="text-end"><em>Net Cash (received)</em> ${money(totalCash - expenseTotal)}</p>
         <p class="text-end"><em>Prepared by:</em> ${workerName}</p>
-      </div>
-    `;
+      </div>`;
   } catch (err) {
     console.error(err);
     Swal.fire("Error", err.message, "error");
@@ -816,7 +809,6 @@ async function generateSalesReport () {
     btn.disabled = false;
   }
 }
-
 
 
 /* =================================================================

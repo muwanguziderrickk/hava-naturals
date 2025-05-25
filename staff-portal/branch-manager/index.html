@@ -250,7 +250,7 @@
                 <div class="row g-3 mb-3">
                   <div class="col-md-4">
                     <label class="form-label">Customer Name</label>
-                    <input id="custName" class="form-control" placeholder="Walk-in / Company X" required>
+                    <input id="custName" class="form-control" placeholder="e.g. Muwa / Walk-in" required>
                   </div>
                   <div class="col-md-4">
                     <label class="form-label">Contact / Address</label>
@@ -525,7 +525,7 @@
               <!-- Movement History Table -->
               <div class="card shadow-sm p-3 mb-4">
                 <h5>Recent Stock Movements</h5>
-                <div class="table-responsive">
+                <div class="table-responsive" style="max-height: 80dvh; overflow-y: auto;">
                   <table class="table table-bordered table-sm">
                     <thead class="table-light">
                       <tr>
@@ -562,13 +562,13 @@
                   </div>
                   <div class="col-md-3">
                     <label class="form-label">To</label>
-                    <input type="datetime-local" id="reportTo" class="form-control">
+                    <input type="date" id="reportTo" class="form-control">
                   </div>
                   <div class="col-md-3">
                     <button id="generateReport" class="btn btn-outline-secondary w-100">Generate</button>
                   </div>
                 </div>
-                <div class="mt-4" id="reportArea">
+                <div class="mt-4" id="stockReportArea">
                   <p class="text-muted">Choose a date to view movement report.</p>
                 </div>
               </div>

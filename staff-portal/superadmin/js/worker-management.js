@@ -96,8 +96,6 @@ workerForm.addEventListener("submit", async (e) => {
     branchId: branchOption.value,                 // UID for queries
     branchName: branchOption.dataset.name,        // Name for display
     accessLevel: workerForm.accessLevel.value,
-    disabled: false,
-    protected: false,
     createdAt: serverTimestamp(),
     lastLoginAt: null
   };
@@ -321,7 +319,7 @@ workerList.addEventListener("click", async (e) => {
     });
     if (conf.isConfirmed) {
       await deleteDoc(docRef);
-      swalToast("Worker deleted", "success");
+      swalToast("Worker has been removed", "success");
     }
     return;
   }

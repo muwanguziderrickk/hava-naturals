@@ -100,9 +100,47 @@ window.sessionReady = new Promise((resolve, reject) => {
 /* ------------------------------------------------------------------
    NETWORK STATUS
 -------------------------------------------------------------------*/
-window.addEventListener("offline", () =>
-  alert("📡 Network connection lost! Please check your internet.")
-);
+// 🔔 Simple centered toast for network messages
+const toast = (() => {
+  const el = document.createElement('div');
+  el.className = 'toast text-white position-fixed top-0 start-50 translate-middle-x border-0 rounded-3 px-2 py-2 shadow';
+  el.style.zIndex = 9999;
+  el.style.textAlign = 'center';
+  el.style.cursor = 'default';
+  document.body.appendChild(el);
+  const bsToast = new bootstrap.Toast(el, { delay: 4000 });
+
+  return (msg, type = 'warning') => {
+    el.className = `toast text-bg-${type} position-fixed top-0 start-50 translate-middle-x border-0 rounded-3 px-4 py-2 shadow`;
+    el.textContent = msg;
+    bsToast.show();
+  };
+})();
+// Network latency check
+async function checkLatency() {
+  const start = performance.now();
+  try {
+    const ctrl = new AbortController();
+    const timeout = setTimeout(() => ctrl.abort(), 4000);
+    await fetch('https://www.gstatic.com/generate_204', {mode: 'no-cors', cache: 'no-store', signal: ctrl.signal,});
+    clearTimeout(timeout);
+
+    const ms = performance.now() - start;
+    if (ms > 1500) toast(`🐌 Slow network detected (${Math.round(ms)} ms)`, 'warning');
+  } catch {
+    if (!navigator.onLine) toast('❌ Network unreachable!', 'danger');
+    else toast('🐢 Very slow or unresponsive network.', 'danger');
+  }
+}
+// Initial and interval checks
+window.addEventListener('load', () => {
+  checkLatency();
+  setInterval(checkLatency, 30000);
+});
+// Offline/online events
+window.addEventListener('offline', () => toast('📡 Network connection lost!', 'danger'));
+window.addEventListener('online', () => toast('✅ You are back online!', 'success'));
+
 
 /* ------------------------------------------------------------------
    ROLE-BASED UI VISIBILITY

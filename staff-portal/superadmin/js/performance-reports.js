@@ -287,5 +287,5 @@ async function downloadPDF () {
   const R = Math.min(W/P.width, H/P.height);
 
   pdf.addImage(img,'PNG',(W-P.width*R)/2,10,P.width*R,P.height*R);
-  pdf.save('dashboard.pdf');
+  pdf.save('performance report.pdf');
 }

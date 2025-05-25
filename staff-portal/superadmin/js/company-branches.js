@@ -211,7 +211,7 @@ branchList.addEventListener("click", async (e) => {
   if (e.target.textContent === " Delete") {
     Swal.fire({
       title: "Are you sure?",
-      text: "This branch will be permanently deleted!",
+      text: "This branch and its data will be permanently deleted!",
       icon: "warning",
       showCancelButton: true,
       confirmButtonColor: "#d33",

@@ -11,6 +11,7 @@ import {
   getDocs,
   setDoc,
   orderBy,
+  serverTimestamp,
   ref,
   uploadBytes,
   getDownloadURL,
@@ -85,6 +86,7 @@ async function submitProduct() {
         sellingPrice,
         description,
         imageUrl,
+        createdAt: serverTimestamp()
       });
       Swal.fire("Added!", "Product added successfully.", "success");
     }

@@ -252,7 +252,7 @@
               <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addProductModal"
                 onclick="resetProductForm()"><i class="fas fa-plus-circle"></i> Add Product</button>
             </div>
-            <div class="table-responsive">
+            <div class="table-responsive" style="max-height: 100dvh; overflow-y: auto;">
               <table class="table table-bordered text-center">
                 <thead class="table-light">
                   <tr>
@@ -366,7 +366,7 @@
 
             <div class="card p-3 mb-4">
               <h5>Company Stock Overview</h5>
-              <div class="table-responsive">
+              <div class="table-responsive" style="max-height: 50dvh; overflow-y: auto;">
                 <table class="table table-bordered table-sm">
                   <thead>
                     <tr>
@@ -420,20 +420,22 @@
             </div>
 
             <div class="card p-3">
-              <h5>Branch Stock Overview</h5>
-              <table class="table table-bordered table-sm">
-                <thead>
-                  <tr>
-                    <th>Item Code</th>
-                    <th>Item Particulars</th>
-                    <th>Branch</th>
-                    <th>Batch Code</th>
-                    <th>Allocated Qty</th>
-                    <th>Action</th>
-                  </tr>
-                </thead>
-                <tbody id="branchStockTableBody"></tbody>
-              </table>
+              <h5>Allocated Stock Overview</h5>
+              <div class="table-responsive" style="max-height: 50dvh; overflow-y: auto;">
+                <table class="table table-bordered table-sm">
+                  <thead>
+                    <tr>
+                      <th>Item Code</th>
+                      <th>Item Particulars</th>
+                      <th>Branch</th>
+                      <th>Batch Code</th>
+                      <th>Allocated Qty</th>
+                      <th>Action</th>
+                    </tr>
+                  </thead>
+                  <tbody id="branchStockTableBody"></tbody>
+                </table>
+              </div>
             </div>
           </div>
           <!-- End Stock Allocation -->
@@ -536,7 +538,7 @@
               <h5>Employee Management</h5>
               <button id="addWorkerBtn" class="btn btn-primary"><i class="fas fa-plus-circle"></i> Add Worker</button>
             </div>
-            <div class="table-responsive">
+            <div class="table-responsive" style="max-height: 100dvh; overflow-y: auto;">
               <table class="table">
                 <thead>
                   <tr>
@@ -660,12 +662,12 @@
             <!-- Charts Grid -->
             <div class="row g-4">
               <div class="col-lg-6">
-                <h6 class="text-center mb-2">Cash vs Credit Sales (by Branch)</h6>
+                <h6 class="text-center mb-2">Cash vs Credit Sales (Per Branch)</h6>
                 <canvas id="salesByBranchChart" height="160"></canvas>
               </div>
 
               <div class="col-lg-6">
-                <h6 class="text-center mb-2">Current Stock Value (by Branch)</h6>
+                <h6 class="text-center mb-2">Current Stock Value (Per Branch)</h6>
                 <canvas id="stockValueChart" height="160"></canvas>
               </div>
 
