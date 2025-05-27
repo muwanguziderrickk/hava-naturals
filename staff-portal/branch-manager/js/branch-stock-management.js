@@ -211,13 +211,11 @@ form.addEventListener("submit", async e => {
 /* ----------------------------------------------------------
    7️⃣  Recent Stock Movements  (limited to latest 100)
 ---------------------------------------------------------- */
-const MOVES_LIMIT = 100;
-
 onSnapshot(
   query(
     collection(db,"companyBranches",branchId,"branchStockLogs"),
     orderBy("createdAt","desc"),
-    limit(MOVES_LIMIT)
+    limit(100)
   ),
   snap=>{
     historyBody.innerHTML="";

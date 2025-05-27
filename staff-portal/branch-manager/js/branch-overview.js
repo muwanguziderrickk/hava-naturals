@@ -329,10 +329,10 @@ document.getElementById("expensesMore")?.addEventListener("click", () => {
              <td>${day}</td>
              <td class="">${info.total.toLocaleString()}</td>
              <td>
-               <button class="btn btn-sm btn-outline-secondary text-end"
-                       data-bs-toggle="collapse" data-bs-target="#${collapseId}">
-                 Details
-               </button>
+                <button class="btn btn-sm btn-outline-secondary toggle-btn" 
+                data-bs-toggle="collapse" data-bs-target="#${collapseId}">
+                  Show
+                </button>
              </td>
            </tr>
            <tr id="${collapseId}" class="collapse">
@@ -345,6 +345,10 @@ document.getElementById("expensesMore")?.addEventListener("click", () => {
              </td>
            </tr>`
         );
+        const btn = body.querySelector(`.toggle-btn[data-bs-target="#${collapseId}"]`);
+        const target = document.getElementById(collapseId);
+        target.addEventListener("shown.bs.collapse", () => btn.textContent = "Hide");
+        target.addEventListener("hidden.bs.collapse", () => btn.textContent = "Show");
       });
   });
 

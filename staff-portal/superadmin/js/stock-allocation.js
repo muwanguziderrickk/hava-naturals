@@ -98,7 +98,7 @@ allocationForm.addEventListener("submit", async e => {
   if(quantity>available)
     return Swal.fire("Too many","Specified quantity exceeds available batch stock","error");
 
-  if(!(await Swal.fire({title:"Confirm", text:`Allocate ${quantity}? Unit(s)`, icon:"question", showCancelButton:true})).isConfirmed)
+  if(!(await Swal.fire({title:"Confirm", text:`Allocate ${quantity} Unit(s)?`, icon:"question", showCancelButton:true})).isConfirmed)
     return;
 
   allocateBtn.disabled=true; allocateSpinner.classList.remove("d-none"); allocateBtnText.textContent="Allocating…";
@@ -138,7 +138,7 @@ allocationForm.addEventListener("submit", async e => {
 
       t.set(logRef,{
         productId, quantity, itemParticulars:particulars,
-        type:"transferIn", targetBranchId:branchId, note:"From main store",
+        type:"transferIn", targetBranchId:me.branchId, note:"From Main Store",
         performedBy, createdAt:serverTimestamp()
       });
     });
