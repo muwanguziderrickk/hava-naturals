@@ -56,7 +56,6 @@ if (!branchId) {
       <td class="text-muted">${idx}</td>
       <td>${esc(d.fullName)}</td>
       <td>${esc(d.position)}</td>
-      <td>${esc(d.accessLevel)}</td>
       <td>${esc(d.contact)}</td>
       <td>${esc(d.email)}</td>
       <td>${esc(d.schedule)}</td>

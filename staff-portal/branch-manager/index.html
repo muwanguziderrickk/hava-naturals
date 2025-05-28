@@ -73,20 +73,21 @@
               <div class="dropdown">
                 <a class="d-flex align-items-center text-decoration-none dropdown-toggle" href="#" role="button"
                   id="userDropdown" data-bs-toggle="dropdown" aria-expanded="false">
-                  <img src="/img/author2.jpg" id="userPhoto" alt="User Photo" class="rounded-circle me-2" width="36"
+                  <img src="" id="userPhoto" alt="User Photo" class="rounded-circle me-2" width="36"
                     height="36" />
                   <div class="d-none d-md-block text-start">
                     <div class="fw-semibold" id="userName">Loading...</div>
-                    <small class="text-muted" id="userEmail">loading@email.com</small>
+                    <small class="text-muted" id="userEmail"></small>
                   </div>
                 </a>
                 <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="userDropdown">
-                  <li><a class="dropdown-item" href="#">View Profile</a></li>
-                  <li><a class="dropdown-item" href="#">Settings</a></li>
+                  <li><a class="dropdown-item" href="#"><i class="fas fa-user-circle me-1"></i>View Profile</a></li>
+                  <li><a class="dropdown-item" href="#"><i class="fas fa-sliders-h me-1"></i>Settings</a></li>
                   <li>
                     <hr class="dropdown-divider" />
                   </li>
-                  <li><a class="dropdown-item text-danger" href="#" id="signOutBtn">Logout</a></li>
+                  <li><a class="dropdown-item text-danger" href="#" id="signOutBtn"><i
+                        class="fas fa-sign-out-alt me-1"></i>Logout</a></li>
                 </ul>
                 <!-- Sign-out Progress Modal -->
                 <div class="modal fade" id="signOutModal" tabindex="-1" aria-hidden="true">
@@ -233,19 +234,14 @@
 
           <!-- ═════════════════  SALES MANAGEMENT  ══════════════════ -->
           <div id="sales-Management" class="content-section">
-
             <div class="container my-4">
-
               <h5 class="fw-semibold mb-3">
                 <i class="bi bi-cash-coin text-primary me-1"></i>
-                Branch Sales <span class="text-muted">&amp;</span> Cash Movement
+                Branch Sales <span class="text-muted">&amp;</span> Expenses
               </h5>
-
               <!-- ░░░░░░░░░░░░  NEW SALE  ░░░░░░░░░░░░ -->
               <form id="salesForm" class="card shadow-sm p-4 mb-5">
-
                 <h6 class="mb-3 fw-bold">New Sale</h6>
-
                 <!-- customer / payment meta -->
                 <div class="row g-3 mb-3">
                   <div class="col-md-4">
@@ -358,7 +354,7 @@
           <!-- ═══════════════════════════════════════════════════ -->
 
 
-          <!-- Start handling receipt printing -->
+          <!-- Start handling credit off setting and receipt preview -->
           <div id="receiptPreview-creditOffset" class="content-section">
             <div class="container py-4">
               <!-- ░░░░░░░░░░  OUTSTANDING CREDIT  ░░░░░░░░░░ -->
@@ -371,6 +367,7 @@
                         <th>Receipt Number</th>
                         <th>Date</th>
                         <th>Customer</th>
+                        <th>Address</th>
                         <th class="text-end">Balance Due</th>
                         <th></th>
                       </tr>
@@ -434,7 +431,6 @@
                       </button>
                     </div>
                   </div>
-
                   <hr class="mb-0" />
                   <p class="small text-muted mb-2">
                     Showing receipts based on selected filters.
@@ -442,7 +438,6 @@
                 </div>
               </div>
             </div>
-
             <div id="receiptPreviewContainer" class="print-preview-list"></div>
           </div>
           <!-- End handling receipt printing -->
@@ -453,9 +448,8 @@
             <div class="container py-4">
               <h5 class="fw-semibold mb-3">
                 <i class="bi bi-graph-up-arrow text-success me-1"></i>
-                Branch Sales &amp; Cash Movement Report
+                Sales <span class="text-muted">&amp;</span> Cash Movement Report
               </h5>
-
               <div class="card shadow-sm p-4">
                 <div class="row g-3 align-items-end">
                   <div class="col-md-3">
@@ -467,14 +461,12 @@
                     <input type="date" id="repTo" class="form-control">
                   </div>
                   <div class="col-md-3">
-                    <button id="genSalesReport" class="btn btn-outline-secondary w-100">
-                      <span id="repSpin" class="spinner-border spinner-border-sm d-none me-2"></span>
-                      <span id="repTxt">Generate</span>
-                    </button>
+                    <button id="genSalesReport" class="btn btn-outline-secondary w-100">Generate</button>
                   </div>
                 </div>
-
-                <div id="salesReportArea" class="mt-4"><!-- report inject --></div>
+                <div id="salesReportArea" class="mt-4">
+                  <p class="text-muted">Choose a date to view movement report.</p>
+                </div>
               </div>
             </div>
           </div>
@@ -486,7 +478,10 @@
           <div id="inventory" class="content-section">
             <!-- Stock Movement Panel -->
             <div class="container py-4">
-              <h5>Branch Stock Movement</h5>
+              <h5 class="fw-semibold mb-3">
+                <i class="bi bi-box text-success me-1"></i>
+                Branch Stock Movement
+              </h5>
               <!-- Movement Form -->
               <form id="movementForm" class="card p-3 shadow-sm mb-4">
                 <div class="row g-3">
@@ -552,9 +547,11 @@
           <!-- Branch Stock Movement Report -->
           <div id="Stock-movement-report" class="content-section">
             <div class="container py-4">
-              <h5>Branch Stock Movement</h5>
-              <div class="card shadow-sm p-3">
-                <h5>Stock Movement Report</h5>
+              <h5 class="fw-semibold mb-3">
+                <i class="bi bi-arrow-left-right text-success me-1"></i>
+                Stock Movement Report
+              </h5>
+              <div class="card shadow-sm p-4">
                 <div class="row g-3 align-items-end">
                   <div class="col-md-3">
                     <label class="form-label">From</label>
@@ -628,7 +625,10 @@
           <!-- Staff Management -->
           <div id="staff" class="content-section">
             <div class="container py-4">
-              <h5>Branch Staff Members</h5>
+              <h5 class="fw-semibold mb-3">
+                <i class="bi bi-person-lines-fill text-success me-1"></i>
+                Branch Staff Members
+              </h5>
               <div class="card shadow-sm p-3 table-responsive">
                 <table class="table table-hover">
                   <thead>
@@ -636,7 +636,6 @@
                       <th>#</th>
                       <th>Name</th>
                       <th>Position</th>
-                      <th>Access level</th>
                       <th>Contact</th>
                       <th>Email</th>
                       <th>Schedule</th>

@@ -51,7 +51,7 @@
         <div class="ms-sm-auto col-lg-10 dashboard-content">
           <nav class="navbar navbar-expand-lg navbar-light bg-light shadow-sm sticky-top px-3 py-2">
             <a class="navbar-brand fw-bold text-truncate w-100" href="#" style="max-width: 100%;">
-              <h4 style="color: darkblue;">Top Level Management (<span id="branchNamePlaceholder"></span>)</h4>
+              <h4 style="color: darkblue;">Top Level (<span id="branchNamePlaceholder"></span>)</h4>
             </a>
 
             <div class="ms-auto d-flex align-items-center gap-3">
@@ -68,20 +68,21 @@
               <div class="dropdown">
                 <a class="d-flex align-items-center text-decoration-none dropdown-toggle" href="#" role="button"
                   id="userDropdown" data-bs-toggle="dropdown" aria-expanded="false">
-                  <img src="/img/author2.jpg" id="userPhoto" alt="User Photo" class="rounded-circle me-2" width="36"
+                  <img src="" id="userPhoto" alt="User Photo" class="rounded-circle me-2" width="36"
                     height="36" />
                   <div class="d-none d-md-block text-start">
                     <div class="fw-semibold" id="userName">Loading...</div>
-                    <small class="text-muted" id="userEmail">loading@email.com</small>
+                    <small class="text-muted" id="userEmail"></small>
                   </div>
                 </a>
                 <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="userDropdown">
-                  <li><a class="dropdown-item" href="#">View Profile</a></li>
-                  <li><a class="dropdown-item" href="#">Settings</a></li>
+                  <li><a class="dropdown-item" href="#"><i class="fas fa-user-circle me-1"></i>View Profile</a></li>
+                  <li><a class="dropdown-item" href="#"><i class="fas fa-sliders-h me-1"></i>Settings</a></li>
                   <li>
                     <hr class="dropdown-divider" />
                   </li>
-                  <li><a class="dropdown-item text-danger" href="#" id="signOutBtn">Logout</a></li>
+                  <li><a class="dropdown-item text-danger" href="#" id="signOutBtn"><i
+                        class="fas fa-sign-out-alt me-1"></i>Logout</a></li>
                 </ul>
                 <!-- Sign-out Progress Modal -->
                 <div class="modal fade" id="signOutModal" tabindex="-1" aria-hidden="true">
@@ -112,16 +113,16 @@
 
               <div class="col-md-4">
                 <div class="card shadow-sm h-100 text-center py-3" id="companyStockCard">
-                  <h5>Current Company Stock</h5>
+                  <h5>Stock in Main Store</h5>
                   <button id="companyStockMore" class="stretched-link btn btn-link p- text-decoration-none">
                     <p id="companyStock" class="display-6 mb-0">–</p>
                   </button>
                 </div>
                 <div class="modal fade" id="companyStockModal" tabindex="-1">
-                  <div class="modal-dialog modal-sm">
+                  <div class="modal-dialog modal-md">
                     <div class="modal-content">
                       <div class="modal-header">
-                        <h5 class="modal-title">Company Stock by Product</h5>
+                        <h5 class="modal-title">Available Stock by Product</h5>
                         <button class="btn-close" data-bs-dismiss="modal"></button>
                       </div>
                       <div class="modal-body">
@@ -248,8 +249,11 @@
           <!-- Products -->
           <div id="products" class="content-section">
             <div class="d-flex justify-content-between align-items-center mb-3">
-              <h5>Company Product List</h5>
-              <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addProductModal"
+              <h5 class="fw-semibold">
+                <i class="bi bi-capsule text-success me-1"></i>
+                Company Product List
+              </h5>
+              <button class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#addProductModal"
                 onclick="resetProductForm()"><i class="fas fa-plus-circle"></i> Add Product</button>
             </div>
             <div class="table-responsive" style="max-height: 100dvh; overflow-y: auto;">
@@ -338,7 +342,10 @@
 
           <!-- 📦 Stock Management Section -->
           <div id="stock" class="content-section">
-            <h5>Company Stock Entry</h5>
+            <h5 class="fw-semibold mb-3">
+              <i class="bi bi-box text-success me-1"></i>
+              Company Stock Entry
+            </h5>
             <div class="card p-3 mb-4">
               <h5>Record New Stock</h5>
               <form id="stockForm" class="row g-3">
@@ -355,7 +362,7 @@
                   <input type="date" class="form-control" id="expiryDate" required>
                 </div>
                 <div class="col-12">
-                  <button type="submit" id="addStockBtn" class="btn btn-success">
+                  <button type="submit" id="addStockBtn" class="btn btn-success btn-sm">
                     <span class="spinner-border spinner-border-sm d-none" id="stockSpinner" role="status"
                       aria-hidden="true"></span>
                     <span id="stockBtnText">Add Stock</span>
@@ -389,7 +396,10 @@
 
           <!-- Start Stock Allocation -->
           <div id="allocation" class="content-section">
-            <h5>Stock Allocation</h5>
+            <h5 class="fw-semibold mb-3">
+              <i class="bi bi-truck text-success me-1"></i>
+              Stock Allocation
+            </h5>
             <div class="card p-3 mb-4">
               <h5>Allocate Stock to Branch</h5>
               <form id="allocationForm" class="row g-3">
@@ -410,7 +420,7 @@
                   <input type="number" class="form-control" id="allocateQuantity" required min="1">
                 </div>
                 <div class="col-12">
-                  <button type="submit" id="allocateStockBtn" class="btn btn-primary">
+                  <button type="submit" id="allocateStockBtn" class="btn btn-primary btn-sm">
                     <span class="spinner-border spinner-border-sm d-none" id="allocateSpinner" role="status"
                       aria-hidden="true"></span>
                     <span id="allocateBtnText">Allocate Stock</span>
@@ -428,6 +438,7 @@
                       <th>Item Code</th>
                       <th>Item Particulars</th>
                       <th>Branch</th>
+                      <th>Date</th>
                       <th>Batch Code</th>
                       <th>Allocated Qty</th>
                       <th>Action</th>
@@ -443,8 +454,12 @@
           <!-- Branches -->
           <div id="branches" class="content-section">
             <div class="d-flex justify-content-between align-items-center mb-3">
-              <h5>Company Branches</h5>
-              <button id="addBranchBtn" class="btn btn-primary"><i class="fas fa-plus-circle"></i> Add Branch</button>
+              <h5 class="fw-semibold">
+                <i class="bi bi-geo-alt text-success me-1"></i>
+                Company Branches
+              </h5>
+              <button id="addBranchBtn" class="btn btn-primary btn-sm"><i class="fas fa-plus-circle"></i> Add
+                Branch</button>
             </div>
 
             <div id="branchList" class="row g-3"></div>
@@ -535,8 +550,12 @@
           <!-- Workers -->
           <div id="workers" class="content-section">
             <div class="d-flex justify-content-between align-items-center mb-3">
-              <h5>Employee Management</h5>
-              <button id="addWorkerBtn" class="btn btn-primary"><i class="fas fa-plus-circle"></i> Add Worker</button>
+              <h5 class="fw-semibold">
+                <i class="bi bi-people text-success me-1"></i>
+                Employee Management
+              </h5>
+              <button id="addWorkerBtn" class="btn btn-primary btn-sm"><i class="fas fa-plus-circle"></i> Add
+                Worker</button>
             </div>
             <div class="table-responsive" style="max-height: 100dvh; overflow-y: auto;">
               <table class="table">

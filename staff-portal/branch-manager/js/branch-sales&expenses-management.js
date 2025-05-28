@@ -175,6 +175,7 @@ async function saveSale(e) {
 
   const saleId  = `S${Date.now()}_${Math.floor(Math.random() * 1000)}`;
   const customer= document.getElementById("custName").value.trim() || "Walk-in";
+  const customerContact= document.getElementById("custContact").value.trim() || "";
 
   try {
     await runTransaction(db, async tx => {
@@ -213,7 +214,7 @@ async function saveSale(e) {
       /* ---------- C. parent sale doc ----------------------------- */
       const saleRef = doc(db, "companyBranches", branchId, "branchSales", saleId);
       tx.set(saleRef, {
-        saleId, customer,
+        saleId, customer, customerContact,
         createdAt  : serverTimestamp(),
         performedBy: workerName,
         paymentType: balance === 0 ? "cash" : "credit",
@@ -466,6 +467,7 @@ onSnapshot(
              <td>${d.id}</td>
              <td>${d.data().createdAt.toDate().toLocaleDateString()}</td>
              <td>${d.data().customer || "-"}</td>
+             <td>${d.data().customerContact || "-"}</td>
              <td class="text-end">${money(d.data().balanceDue)}</td>
              <td class="text-end">
                <button class="btn btn-sm btn-outline-primary pay-btn"
@@ -700,41 +702,42 @@ window.printHtmlReceipt = (html) => {
 
 
 /* =================================================================
-   5️⃣  SALES REPORT  –  deposit-aware, date-range accurate
+   5️⃣  SALES REPORT  –  deposit-aware, sorted, “top seller” per item
    ================================================================= */
 document.getElementById("genSalesReport")
         .addEventListener("click", generateSalesReport);
 
 async function generateSalesReport () {
   const btn  = document.getElementById("genSalesReport");
-  const spin = document.getElementById("repSpin");
-  const txt  = document.getElementById("repTxt");
+  const salesReportArea = document.getElementById("salesReportArea");
 
-  spin.classList.remove("d-none");
-  txt.textContent = "Generating…";
+  /* UX ---------------------------------------------------------------- */
   btn.disabled = true;
+  salesReportArea.innerHTML = `
+    <div class="text-center my-3">
+      <div class="spinner-border text-primary"></div>
+      <div class="mt-2">Generating…</div>
+    </div>`;
 
   try {
-    /* ── 1. Date range (inclusive) ─────────────────────── */
-    const fromElm = document.getElementById("repFrom");
-    const toElm   = document.getElementById("repTo");
-
-    const today   = new Date();                                // now
-    const start   = fromElm.valueAsDate
-                      ? new Date(fromElm.valueAsDate.setHours(0,0,0,0))
-                      : new Date(today.toISOString().slice(0,10) + "T00:00:00");
-
-    const end     = toElm.valueAsDate
-                      ? new Date(toElm.valueAsDate.setHours(23,59,59,999))
-                      : new Date(today);                       // “today → now”
+    /* ---------- 1. date range (inclusive) ---------- */
+    const start = (() => {
+      const d = document.getElementById("repFrom").valueAsDate;
+      return d ? new Date(d.setHours(0,0,0,0))
+               : new Date(new Date().toISOString().slice(0,10)+"T00:00:00");
+    })();
+    const end = (() => {
+      const d = document.getElementById("repTo").valueAsDate;
+      return d ? new Date(d.setHours(23,59,59,999)) : new Date();
+    })();
 
     if (start > end) {
       await Swal.fire("Invalid range","‘From’ date is after ‘To’ date","warning");
       return;
     }
 
-    /* ── 2. Parallel fetches ───────────────────────────── */
-    const [salesSnap, expSnap] = await Promise.all([
+    /* ---------- 2. parallel reads ---------- */
+    const [ salesSnap , expSnap ] = await Promise.all([
       getDocs(query(
         collection(db,"companyBranches",branchId,"branchSales"),
         where("createdAt",">=",start), where("createdAt","<=",end)
@@ -745,66 +748,74 @@ async function generateSalesReport () {
       ))
     ]);
 
-    /* We do *not* query the payments sub-collection; `paidAmount`
-       in each sale already contains every deposit up to “now”.
-       That means deposits are always booked on the sale’s date,
-       which is exactly the behaviour requested.                   */
+    /* ---------- 3. aggregate sales ---------- */
+    const agg   = new Map();   // pid → { name, qty, cash, credit, sellers: Map(person → qty) }
+    let totalCash=0, totalCred=0;
 
-    /* ── 3. Aggregate sales per product ─────────────────── */
-    const agg = new Map();           // productId → {name, qty, cash, credit}
-    let totalCash   = 0;
-    let totalCredit = 0;
-
-    salesSnap.forEach(doc => {
-      const sale       = doc.data();
-      const paid       = +sale.paidAmount  || 0;
-      const balance    = +sale.balanceDue  || 0;      // 0 if fully cleared
+    salesSnap.forEach(doc=>{
+      const s = doc.data();
+      const paid = +s.paidAmount  || 0;
+      const bal  = +s.balanceDue  || 0;
 
       totalCash   += paid;
-      totalCredit += balance;
+      totalCred   += bal;
 
-      /* spread overall discount across items so per-item numbers add up */
-      const netNoOvr = sale.items
-        .reduce((s,i)=>s+i.unit*i.qty*(1-i.disc/100),0);
-      const scale    = netNoOvr ? sale.grandTotal / netNoOvr : 1;
+      /* weight for each item toward cash / credit */
+      const netNoOvr = s.items.reduce((t,i)=>t+i.unit*i.qty*(1-i.disc/100),0);
+      const scale    = netNoOvr ? s.grandTotal/netNoOvr : 1;
+      const cashR    = paid   / s.grandTotal;
+      const credR    = bal    / s.grandTotal;
 
-      sale.items.forEach(it=>{
-        const net  = it.unit*it.qty*(1-it.disc/100)*scale;
-        const rec  = agg.get(it.productId) || {
-                       name  : productCache[it.productId]?.itemParticulars || "",
-                       qty   : 0, cash:0, credit:0
-                     };
-        const cashPart   = paid   / sale.grandTotal;   // 0-1 ratio
-        const creditPart = balance/ sale.grandTotal;   // 0-1 ratio
+      s.items.forEach(it=>{
+        const rec = agg.get(it.productId) || {
+          name    : productCache[it.productId]?.itemParticulars || "",
+          qty     : 0, cash:0, credit:0,
+          sellers : new Map()
+        };
 
+        const net = it.unit*it.qty*(1-it.disc/100)*scale;
         rec.qty    += it.qty;
-        rec.cash   += net * cashPart;
-        rec.credit += net * creditPart;
+        rec.cash   += net * cashR;
+        rec.credit += net * credR;
+
+        // seller stats
+        const seller = s.performedBy || "N/A";
+        rec.sellers.set(seller, (rec.sellers.get(seller)||0)+it.qty);
+
         agg.set(it.productId, rec);
       });
     });
 
-    /* ── 4. Aggregate expenses ─────────────────────────── */
-    let expenseTotal = 0;
-    const expenseRows = expSnap.docs.map(d=>{
-      const amt = +d.data().amount || 0;
-      expenseTotal += amt;
+    /* ---------- 4. expenses ---------- */
+    let expenseTot = 0;
+    const expRows  = expSnap.docs.map(d=>{
+      const amt = +d.data().amount||0;
+      expenseTot += amt;
       return `<tr><td>${d.data().note}</td><td>${(amt)}</td></tr>`;
     }).join("");
 
-    /* ── 5. Build sales rows ───────────────────────────── */
-    const salesRows = [...agg.entries()].map(([pid,r])=>`
-      <tr>
-        <td>${pid}</td>
-        <td>${r.name}</td>
-        <td class="text-center">${r.qty}</td>
-        <td class="text-end">${(r.cash)}</td>
-        <td class="">${(r.credit)}</td>
-        <td>${workerName}</td>
-      </tr>`).join("");
+    /* ---------- 5. build & sort sales rows ---------- */
+    const rows = [...agg.entries()]
+      .sort((a,b)=>a[0].localeCompare(b[0],undefined,{numeric:true}))   // by Item Code
+      .map(([pid,r])=>{
+        // pick top-seller
+        let topSeller = "—";
+        if (r.sellers.size){
+          topSeller = [...r.sellers.entries()]
+                        .sort((a,b)=>b[1]-a[1])[0][0];   // highest qty
+        }
+        return `<tr>
+          <td>${pid}</td>
+          <td>${r.name}</td>
+          <td class="text-center">${r.qty}</td>
+          <td class="text-end">${(r.cash)}</td>
+          <td class="text-end">${(r.credit)}</td>
+          <td>${topSeller}</td>
+        </tr>`;
+      }).join("");
 
-    /* ── 6. Inject report HTML ─────────────────────────── */
-    document.getElementById("salesReportArea").innerHTML = `
+    /* ---------- 6. print-ready HTML ---------- */
+    salesReportArea.innerHTML = `
       <div class="d-flex justify-content-end mb-2">
         <button class="btn btn-outline-primary btn-sm" onclick="printDiv('printReport')">
           <i class="bi bi-printer me-1"></i> Print Report
@@ -815,19 +826,20 @@ async function generateSalesReport () {
         <div class="text-center mb-2">
           <img src="/img/logoShareDisplay.jpeg" style="height:90px" alt="logo"><br>
           <h5>${branchName}</h5>
-          <small>Sales & Cash Report (${start.toLocaleString()} → ${end.toLocaleString()})</small>
+          <small>Sales & Cash Movement Report (${start.toLocaleString()} → ${end.toLocaleString()})</small>
         </div>
 
         <div class="table-responsive">
           <table class="table table-sm table-bordered">
             <thead class="table-light">
               <tr>
-                <th>Code</th><th>Product</th><th>Qty</th>
-                <th class="text-end">Cash Sales(USh)</th><th>Credit Sales(USh)</th><th>Processed By</th>
+                <th>Item Code</th><th>Item Particulars</th><th>Qty Sold</th>
+                <th class="text-end">Cash Sales(USh)</th><th class="text-end">Credit Sales(USh)</th>
+                <th>Processed By</th>
               </tr>
             </thead>
             <tbody>
-              ${salesRows || `<tr><td colspan="6" class="text-center">No sales</td></tr>`}
+              ${rows || `<tr><td colspan="6" class="text-center">No sales</td></tr>`}
             </tbody>
             <tfoot class="fw-bold">
               <tr>
@@ -835,8 +847,8 @@ async function generateSalesReport () {
                 <td class="text-end">${money(totalCash)}</td><td colspan="2"></td>
               </tr>
               <tr>
-                <td colspan="3" class="text-end">Total Credit (outstanding)</td>
-                <td class="text-end">${money(totalCredit)}</td><td colspan="2"></td>
+                <td colspan="3" class="text-end">Outstanding Credit</td>
+                <td class="text-end">${money(totalCred)}</td><td colspan="2"></td>
               </tr>
             </tfoot>
           </table>
@@ -845,27 +857,19 @@ async function generateSalesReport () {
         <h6 class="mt-4">Expenses</h6>
         <div class="table-responsive">
           <table class="table table-sm table-bordered">
-            <thead class="table-light">
-              <tr><th>Details</th><th>Amount (USh)</th></tr>
-            </thead>
-            <tbody>
-              ${expenseRows || `<tr><td colspan="2" class="text-center">No expenses</td></tr>`}
-            </tbody>
-            <tfoot class="fw-bold">
-              <tr><td class="text-end">Total</td><td>${money(expenseTotal)}</td></tr>
-            </tfoot>
+            <thead class="table-light"><tr><th>Details</th><th>Amount(USh)</th></tr></thead>
+            <tbody>${expRows || `<tr><td colspan="2" class="text-center">No expenses</td></tr>`}</tbody>
+            <tfoot class="fw-bold"><tr><td class="text-end">Total</td><td>${money(expenseTot)}</td></tr></tfoot>
           </table>
         </div>
 
-        <p class="text-end"><em>Net Cash (received)</em> ${money(totalCash - expenseTotal)}</p>
+        <p class="text-end"><em>Net Cash (Received)</em> ${money(totalCash - expenseTot)}</p>
         <p class="text-end"><em>Prepared by:</em> ${workerName}</p>
       </div>`;
   } catch (err) {
     console.error(err);
     Swal.fire("Error", err.message, "error");
   } finally {
-    spin.classList.add("d-none");
-    txt.textContent = "Generate";
     btn.disabled = false;
   }
 }

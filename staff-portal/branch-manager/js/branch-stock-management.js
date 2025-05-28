@@ -237,96 +237,134 @@ onSnapshot(
     });
   });
 
+  
 /* ----------------------------------------------------------
-   8️⃣  Stock-Movement report  (safer)
+   8️⃣  Stock-Movement Report  – shows *every* stocked item
+        (opening / in / out / sales / closing)
 ---------------------------------------------------------- */
 reportBtn.addEventListener("click", generateReport);
 
-async function generateReport(){
-  const fromInp=document.getElementById("reportFrom");
-  const toInp  =document.getElementById("reportTo");
+async function generateReport () {
+  const fromInp = document.getElementById("reportFrom");
+  const toInp   = document.getElementById("reportTo");
 
-  const fromDate=new Date((fromInp.value||new Date().toISOString().slice(0,10))+"T00:00:00");
-  const toDate  =toInp.value ? new Date(toInp.value+"T23:59:59") : new Date();
+  /* ---------- date range ---------- */
+  const fromDate = new Date((fromInp.value || new Date().toISOString().slice(0, 10)) + "T00:00:00");
+  const toDate   = toInp.value ? new Date(toInp.value + "T23:59:59") : new Date();
 
-  reportBtn.disabled=true;
-  stockReportArea.innerHTML=`<div class="text-center my-3">
-      <div class="spinner-border text-primary"></div><div class="mt-2">Generating…</div></div>`;
+  /* ---------- UX ---------- */
+  reportBtn.disabled = true;
+  stockReportArea.innerHTML = `
+    <div class="text-center my-3">
+      <div class="spinner-border text-primary"></div>
+      <div class="mt-2">Generating…</div>
+    </div>`;
 
-  try{
-    const logsSnap=await getDocs(query(
-      collection(db,"companyBranches",branchId,"branchStockLogs"),
-      where("createdAt",">=",fromDate), where("createdAt","<=",toDate)
+  try {
+    /* 1️⃣  pull *all* stock-movement logs in period ------------------ */
+    const rangeLogsSnap = await getDocs(query(
+      collection(db, "companyBranches", branchId, "branchStockLogs"),
+      where("createdAt", ">=", fromDate),
+      where("createdAt", "<=", toDate)
     ));
 
-    /* aggregate */
-    const agg=new Map();  // pid→{sales,in,out}
-    logsSnap.forEach(l=>{
-      const d=l.data();
-      if(!agg.has(d.productId)) agg.set(d.productId,{sales:0,in:0,out:0});
-      const rec=agg.get(d.productId);
-      if(d.type==="sale")        rec.sales+=d.quantity;
-      if(d.type==="transferIn")  rec.in   +=d.quantity;
-      if(d.type==="transferOut") rec.out  +=d.quantity;
+    /* 2️⃣  build a map  pid → { sales,in,out }  ---------------------- */
+    const movement = new Map();                        // totals in period
+    rangeLogsSnap.forEach(l => {
+      const d = l.data();
+      if (!movement.has(d.productId)) movement.set(d.productId, { sales: 0, in: 0, out: 0 });
+      const rec = movement.get(d.productId);
+      if (d.type === "sale")        rec.sales += +d.quantity || 0;
+      if (d.type === "transferIn")  rec.in    += +d.quantity || 0;
+      if (d.type === "transferOut") rec.out   += +d.quantity || 0;
     });
 
-    /* rows */
-    const rows=[];
-    for(const [pid, stat] of agg){
-      /* opening=closing+out+sales-in  (snapshot at end) */
-      const stockSnap = await getDoc(doc(db, "companyBranches", branchId, "branchStock", pid));
-      let closing = stockSnap.exists() ? +stockSnap.data().quantity : 0;
-      /* “Undo” movements that happened AFTER our report’s end date */
-      const logsAfterEnd = await getDocs(query(
+    /* 3️⃣  grab the *current* branch stock snapshot ------------------ */
+    const currentStockSnap = await getDocs(collection(db, "companyBranches", branchId, "branchStock"));
+    const currentStock = new Map();                    // pid → current qty
+    currentStockSnap.forEach(s => currentStock.set(s.id, +s.data().quantity || 0));
+
+    /* 4️⃣  ensure every stocked item appears even w/ no movement ----- */
+    currentStock.forEach((_, pid) => {
+      if (!movement.has(pid)) movement.set(pid, { sales: 0, in: 0, out: 0 });
+    });
+
+    /* 5️⃣  for *each* product work out closing / opening ------------- */
+    const rows = [];
+
+    for (const [pid, stat] of movement) {
+      /* a) closing = stock level *at end of period*  ---------------- */
+      /*    Start from *current* stock (now) …                         */
+      let closing = currentStock.get(pid) || 0;
+      /*    … then “undo” logs that happened AFTER the report period.  */
+      const afterSnap = await getDocs(query(
         collection(db, "companyBranches", branchId, "branchStockLogs"),
         where("productId", "==", pid),
-        where("createdAt", ">", toDate)             // strictly after the period
+        where("createdAt", ">", toDate)
       ));
-      logsAfterEnd.forEach(l => {
+      afterSnap.forEach(l => {
         const d = l.data();
         switch (d.type) {
-          case "sale":         closing += d.quantity; break;        // reverse the decrease
-          case "transferOut":  closing += d.quantity; break;
-          case "transferIn":   closing -= d.quantity; break;        // reverse the increase
+          case "sale":         closing += +d.quantity || 0; break;  // reverse decrease
+          case "transferOut":  closing += +d.quantity || 0; break;
+          case "transferIn":   closing -= +d.quantity || 0; break;  // reverse increase
         }
       });
-      /* now closing is the stock **at the end of the period** */
+      /* b) opening = closing + out + sales − in  -------------------- */
       const opening = closing + stat.out + stat.sales - stat.in;
-      const meta=productCache.get(pid)||{itemCode:pid,itemParticulars:""};
-      rows.push(`<tr>
-        <td>${meta.itemCode}</td><td>${meta.itemParticulars}</td>
-        <td>${opening}</td><td>${stat.sales}</td><td>${stat.out}</td>
-        <td>${stat.in}</td><td>${closing}</td></tr>`);
+      /* c) meta ------------------------------------------------------ */
+      const meta = productCache.get(pid) || { itemCode: pid, itemParticulars: "" };
+
+      rows.push({
+        code   : meta.itemCode,
+        name   : meta.itemParticulars,
+        opening, sales: stat.sales, out: stat.out, in: stat.in, closing
+      });
     }
 
+    /* 6️⃣  sort rows by Item Code ascending -------------------------- */
+    rows.sort((a, b) => a.code.localeCompare(b.code, undefined, { numeric: true }));
+
+    /* 7️⃣  render ---------------------------------------------------- */
     stockReportArea.innerHTML = rows.length
       ? `<div class="d-flex justify-content-end">
            <button class="btn btn-outline-primary btn-sm" onclick="printDiv('reportContent')">
              <i class="bi bi-printer me-1"></i> Print Report
-           </button></div>
+           </button>
+         </div>
          <div id="reportContent">
            <div class="text-center mb-2">
              <img src="/img/logoShareDisplay.jpeg" style="height:90px"><br>
              <h5>${branchName}</h5>
              <small>Stock Movement Report (${fromDate.toLocaleString()} ➜ ${toDate.toLocaleString()})</small>
            </div>
+
            <div class="table-responsive">
-            <table class="table table-sm table-bordered">
-              <thead class="table-light"><tr>
-                <th>Item Code</th><th>Item Particulars</th><th>Opening Stock</th>
-                <th>Sales</th><th>Transfer Out</th><th>Transfer In</th><th>Closing Stock</th>
-              </tr></thead><tbody>${rows.join("")}</tbody>
-            </table>
+             <table class="table table-sm table-bordered">
+               <thead class="table-light">
+                 <tr>
+                   <th>Item Code</th><th>Item Particulars</th><th>Opening</th>
+                   <th>Sales</th><th>Transfer Out</th><th>Transfer In</th><th>Closing</th>
+                 </tr>
+               </thead>
+               <tbody>
+                 ${rows.map(r => `
+                   <tr>
+                     <td>${r.code}</td><td>${r.name}</td><td>${r.opening}</td>
+                     <td>${r.sales}</td><td>${r.out}</td><td>${r.in}</td><td>${r.closing}</td>
+                   </tr>`).join("")}
+               </tbody>
+             </table>
            </div>
            <p class="text-end"><em>Prepared by:</em> ${performedBy}</p>
          </div>`
-      : `<div class="alert alert-info">No movement recorded in this period.</div>`;
+      : `<div class="alert alert-info">No stock recorded for this period.</div>`;
 
-  }catch(err){
+  } catch (err) {
     console.error(err);
     Swal.fire("Error", err.message, "error");
-  }finally{
-    reportBtn.disabled=false;
+  } finally {
+    reportBtn.disabled = false;
   }
 }
 

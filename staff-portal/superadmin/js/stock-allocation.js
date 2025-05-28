@@ -217,6 +217,7 @@ onSnapshot(
           <td>${a.productId}</td>
           <td>${a.itemParticulars}</td>
           <td>${branchName}</td>
+          <td>${a.allocatedAt.toDate().toLocaleString()}</td>
           <td>${a.batchId}</td>
           <td>${a.quantityAllocated}</td>
           <td>
